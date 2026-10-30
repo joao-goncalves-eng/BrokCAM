@@ -1,0 +1,20 @@
+%
+M48
+;GenerationSoftware,Autodesk,EAGLE,9.6.2*%
+;CreationDate,2026-10-14T13:00:00Z*%
+;FORMAT={2:4/ absolute / inch / leading zeros}
+INCH
+T01C0.0236
+T02C0.0400
+%
+G90
+M71
+M72
+T01
+X8000Y2000
+X10000Y2000
+Y6000
+T02
+X1000Y1000
+X11000
+M30

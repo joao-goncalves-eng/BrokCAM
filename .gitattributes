@@ -1,0 +1,19 @@
+# Normaliza texto para LF no repositório; o Git converte no checkout conforme o sistema.
+* text=auto
+
+*.py   text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.svg  text eol=lf
+
+# Scripts do Windows precisam de CRLF
+*.bat  text eol=crlf
+
+# Arquivos de fabricação de teste: preservar byte a byte (os testes comparam o conteúdo)
+tests/data/** -text
+
+# Binários
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.zip  binary

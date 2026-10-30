@@ -1,0 +1,38 @@
+# --- Ambiente Python ---
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Build / empacotamento (PyInstaller, wheels) ---
+build/
+dist/
+*.spec
+
+# --- Material de apoio que não faz parte do software ---
+# FlatCAM 8.994 decompilado, usado só como referência de engenharia reversa
+_reference/
+# Exportações temporárias geradas em sessões de trabalho
+_claude_export/
+
+# --- Saídas geradas pelo usuário ao usar o BrokCAM ---
+*.nc
+*.ngc
+*.gcode
+!tests/data/**
+*.log
+
+# --- Editores e sistema ---
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store

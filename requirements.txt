@@ -1,0 +1,5 @@
+PySide6>=6.6
+shapely>=2.0
+numpy>=1.26
+pyserial>=3.5
+pytest>=8
