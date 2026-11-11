@@ -139,6 +139,10 @@ UI (`brokcam/ui/`):
   `open_files` com `.nc` → `import_gcode_files`; `view_gcode_dialog` mantém o "só visualizar/enviar".
   Inspetor: tabela *Ferramentas e cortes* (`_add_imported_params`, uma coluna por op) → `editOpsRequested` →
   `EditJobOpsCmd`. `open_project` aceita job com `ops` e `source=-1`.
+- **Ícone do app:** `brokcam/ui/assets/` (`brokcam.svg` mestre, `brokcam-small.svg` para 16–24 px, `.ico` e PNG
+  gerados por `tools/make_app_icon.py` — rode de novo ao mudar um SVG). `icons.app_icon()`/`app_pixmap()`. O
+  renderizador SVG do Qt ignora `clipPath`: desenhe formas que já sigam os cantos. `CriarAtalho.bat` →
+  `tools/criar_atalho.ps1` (atalhos .lnk com o ícone; um .bat não tem ícone próprio).
 - **Aparência:** `MainWindow._build_appearance_menu` (Exibir › Aparência e botão da faixa) grava `theme`, `accent`,
   `accent_custom`, `canvas_style`, `corners`, `density`, `colored_icons` (grupo `ui`) e chama
   `theme.manager().configure(**_style_kwargs())`. Use `palette().accent_fg` (não `accent`) quando o destaque for COR

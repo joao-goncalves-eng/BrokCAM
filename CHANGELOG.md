@@ -29,6 +29,11 @@ usa [Versionamento Semântico](https://semver.org/lang/pt-BR/) — veja
   (11 cores ou personalizada, sempre ajustada para AA); **fundo em degradê** no canvas e na tela
   inicial; **ícones coloridos**; **cantos** (suaves/arredondados/retos) e **densidade**
   (confortável/compacta). Menu *Exibir → Aparência* e botão de aparência na faixa de comandos.
+- **Ícone do aplicativo:** B chanfrado (peça usinada) sobre placa de cobre, com o vão de baixo
+  como furo metalizado. Na janela, na barra de tarefas, na tela inicial e em *Sobre*;
+  `brokcam/ui/assets/brokcam.ico` (16–256 px, com versão própria para 16–24 px) gerado dos SVGs
+  por `tools/make_app_icon.py`. **CriarAtalho.bat** cria atalhos com o ícone na Área de
+  Trabalho e no Menu Iniciar.
 - Seletor *Preparar/Máquina* no início da faixa (como o seletor de espaço do Fusion) e títulos
   dos painéis em versalete.
 

@@ -489,3 +489,19 @@ def test_wizard_dialog_pages(qapp):
     wiz.reject()
     wiz.deleteLater()
     wait(10)
+
+
+def test_app_icon_all_sizes(qapp):
+    """Ícone do aplicativo: .ico com 16–256 px, usado como ícone da janela."""
+    from PySide6.QtCore import QSize
+    from PySide6.QtWidgets import QApplication
+    from brokcam.ui.icons import ASSETS_DIR, app_icon, app_pixmap
+    for f in ("brokcam.svg", "brokcam-small.svg", "brokcam.ico", "brokcam-256.png"):
+        assert (ASSETS_DIR / f).exists(), f
+    ic = app_icon()
+    sizes = {s.width() for s in ic.availableSizes()}
+    assert {16, 24, 32, 48, 256} <= sizes
+    img = ic.pixmap(QSize(16, 16)).toImage()
+    assert img.pixelColor(8, 1).red() > 150                       # placa de cobre, não vazio
+    assert not app_pixmap(48, 2.0).isNull()
+    assert not QApplication.windowIcon().isNull()

@@ -1,3 +1,5 @@
+<img src="brokcam/ui/assets/brokcam-256.png" width="96" align="right" alt="Ícone do BrokCAM">
+
 # BrokCAM
 
 **Do Gerber à placa fresada: um CAM para fabricar PCBs em casa com fresadoras e lasers GRBL.**
@@ -6,7 +8,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![Qt](https://img.shields.io/badge/PySide6-Qt%206-41CD52?logo=qt&logoColor=white)
 ![GRBL](https://img.shields.io/badge/GRBL-1.1-orange)
-![Testes](https://img.shields.io/badge/testes-327%20passando-238636)
+![Testes](https://img.shields.io/badge/testes-348%20passando-238636)
 ![Licença](https://img.shields.io/badge/licença-MIT-lightgrey)
 
 ![Tela principal do BrokCAM](docs/screenshots/main_dark.png)
@@ -99,7 +101,8 @@ python -m venv .venv
 .venv\Scripts\python.exe run.py
 ```
 
-Depois da primeira instalação basta dar duplo clique em `BrokCAM.bat`.
+Depois da primeira instalação basta dar duplo clique em `BrokCAM.bat` — ou rode `CriarAtalho.bat`
+uma vez para ter o BrokCAM com ícone próprio na Área de Trabalho e no Menu Iniciar.
 
 ## Arquitetura
 

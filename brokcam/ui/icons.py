@@ -19,6 +19,33 @@ from PySide6.QtSvg import QSvgRenderer
 from . import theme
 
 ICON_DIR = Path(__file__).with_name("icons")
+ASSETS_DIR = Path(__file__).with_name("assets")
+
+
+@lru_cache(maxsize=None)
+def app_icon() -> QIcon:
+    """Ícone do aplicativo (B chanfrado sobre placa de cobre), em todos os tamanhos.
+
+    Vem de ``assets/brokcam.ico`` (16–256 px; 16–24 px desenhados à parte para ficarem
+    nítidos). Regenerar a partir dos SVGs: ``tools/make_app_icon.py``.
+    """
+    ico = ASSETS_DIR / "brokcam.ico"
+    ic = QIcon(str(ico)) if ico.exists() else QIcon()
+    if ic.isNull() or not ic.availableSizes():
+        ic = QIcon()
+        small, big = ASSETS_DIR / "brokcam-small.svg", ASSETS_DIR / "brokcam.svg"
+        for s in (16, 20, 24):
+            ic.addFile(str(small), QSize(s, s))
+        for s in (32, 48, 64, 128, 256):
+            ic.addFile(str(big), QSize(s, s))
+    return ic
+
+
+def app_pixmap(size: int, dpr: float = 1.0) -> QPixmap:
+    """Ícone do aplicativo como pixmap nítido em telas com escala (``dpr``)."""
+    pm = app_icon().pixmap(QSize(size, size), dpr)
+    pm.setDevicePixelRatio(dpr)
+    return pm
 
 
 @lru_cache(maxsize=None)

@@ -14,7 +14,7 @@ from brokcam import __version__
 from brokcam.core.params import ParamGroup, ParamSpec, all_groups
 
 from . import backend, theme
-from .icons import pixmap
+from .icons import app_pixmap
 from .param_form import _fmt_value, spec_range_text
 
 KIND_PT = {"float": "número decimal", "int": "número inteiro", "bool": "liga/desliga",
@@ -321,7 +321,7 @@ class AboutDialog(QDialog):
         lay.setSpacing(10)
         head = QHBoxLayout()
         logo = QLabel()
-        logo.setPixmap(pixmap("board", 48, theme.palette().accent, self.devicePixelRatioF()))
+        logo.setPixmap(app_pixmap(56, self.devicePixelRatioF()))
         head.addWidget(logo)
         col = QVBoxLayout()
         t = QLabel("BrokCAM")

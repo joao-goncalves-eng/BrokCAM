@@ -102,8 +102,8 @@ def create_app(argv: list[str] | None = None):  # type: ignore[no-untyped-def]
     app.setApplicationDisplayName("BrokCAM")
     from brokcam import __version__
     app.setApplicationVersion(__version__)
-    from brokcam.ui.icons import icon
-    app.setWindowIcon(icon("board", "accent"))
+    from brokcam.ui.icons import app_icon
+    app.setWindowIcon(app_icon())
     return app
 
 
