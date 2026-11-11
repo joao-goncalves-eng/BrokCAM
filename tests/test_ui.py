@@ -505,3 +505,10 @@ def test_app_icon_all_sizes(qapp):
     assert img.pixelColor(8, 1).red() > 150                       # placa de cobre, não vazio
     assert not app_pixmap(48, 2.0).isNull()
     assert not QApplication.windowIcon().isNull()
+
+
+def test_smoke_test_mode(qapp, monkeypatch, tmp_path):
+    """``--smoke-test`` (usado para validar o .exe): abre o exemplo e sai com código 0."""
+    monkeypatch.setenv("BROKCAM_CONFIG_DIR", str(tmp_path))
+    from brokcam import app as app_mod
+    assert app_mod.main(["BrokCAM", "--smoke-test"]) == 0

@@ -107,8 +107,54 @@ def create_app(argv: list[str] | None = None):  # type: ignore[no-untyped-def]
     return app
 
 
+def _smoke_test(app, win) -> int:  # type: ignore[no-untyped-def]
+    """``--smoke-test``: abre o exemplo, confere ícone/tema/parsers e fecha (código 0 = ok).
+
+    Usado para validar o executável gerado pelo PyInstaller (``tools/build_exe.ps1``): se faltar
+    um recurso (ícones, exemplo, plugin do Qt, Shapely…) o código de saída é ≠ 0.
+    """
+    from PySide6.QtCore import QElapsedTimer, QTimer
+    from brokcam.ui import backend
+    from brokcam.ui.welcome import example_files
+    result = {"code": 1}
+    missing = [k for k, ok in backend.status().items() if not ok]
+    if missing or not example_files():
+        log.error("smoke test: módulos ausentes %s / exemplo %s", missing, "ok" if example_files() else "AUSENTE")
+        win.machine.shutdown()
+        return 3
+    clock = QElapsedTimer()
+    clock.start()
+    win.open_example()
+
+    def check() -> None:
+        if win.project.layers and not win.runner.busy():
+            icon_ok = not app.windowIcon().isNull() and bool(app.windowIcon().availableSizes())
+            n = len(win.project.layers)
+            log.info("smoke test: %d camada(s) do exemplo, ícone %s", n, "ok" if icon_ok else "AUSENTE")
+            result["code"] = 0 if (icon_ok and n >= 3) else 2
+            win.project.set_modified(False)
+            app.quit()
+            return
+        if clock.elapsed() > 60_000:
+            log.error("smoke test: tempo esgotado ao abrir o exemplo")
+            win.project.set_modified(False)
+            app.quit()
+            return
+        QTimer.singleShot(100, check)
+
+    QTimer.singleShot(300, check)
+    app.exec()
+    win.machine.shutdown()
+    return result["code"]
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv if argv is None else argv)
+    smoke = "--smoke-test" in argv
+    if smoke:
+        argv.remove("--smoke-test")
+        import tempfile
+        os.environ["BROKCAM_CONFIG_DIR"] = tempfile.mkdtemp(prefix="brokcam-smoke-")   # não mexe nas suas preferências
     setup_logging()
     install_excepthooks()
     if sys.platform == "win32":
@@ -122,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
     from brokcam.ui.settings import AppSettings
     win = MainWindow(AppSettings())
     win.show()
+    if smoke:
+        return _smoke_test(app, win)
     files = [a for a in argv[1:] if os.path.exists(a)]
     if files:
         win.open_files(files)

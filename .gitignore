@@ -15,6 +15,7 @@ htmlcov/
 build/
 dist/
 *.spec
+!BrokCAM.spec
 
 # --- Material de apoio que não faz parte do software ---
 # FlatCAM 8.994 decompilado, usado só como referência de engenharia reversa

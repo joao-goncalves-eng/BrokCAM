@@ -52,8 +52,12 @@ git add -A
 git commit -m "release: vX.Y.Z"
 git tag -a vX.Y.Z -m "BrokCAM vX.Y.Z"
 
-# 4. Envie para o GitHub
+# 4. Gere o executável (testa sozinho e cria dist\BrokCAM-X.Y.Z-windows-x64.zip)
+.\GerarExecutavel.bat
+
+# 5. Envie para o GitHub
 git push origin main --tags
 ```
 
-Depois, no GitHub: *Releases → Draft a new release*, escolha a tag e cole a seção do CHANGELOG.
+Depois, no GitHub: *Releases → Draft a new release*, escolha a tag, cole a seção do CHANGELOG e
+anexe o `.zip` de `dist\`. (A pasta `dist\` não vai para o Git.)

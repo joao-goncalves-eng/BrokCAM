@@ -139,6 +139,11 @@ UI (`brokcam/ui/`):
   `open_files` com `.nc` → `import_gcode_files`; `view_gcode_dialog` mantém o "só visualizar/enviar".
   Inspetor: tabela *Ferramentas e cortes* (`_add_imported_params`, uma coluna por op) → `editOpsRequested` →
   `EditJobOpsCmd`. `open_project` aceita job com `ops` e `source=-1`.
+- **Executável:** `BrokCAM.spec` (PyInstaller, pasta única `dist/BrokCAM/`, sem console, ícone e versão do
+  Windows lidos de `brokcam/__init__.py`). O backend importa módulos via `importlib`, então o spec usa
+  `collect_submodules("brokcam")`; recursos (`ui/icons`, `ui/assets`, `tests/data`) vão em `datas` e são achados
+  por `Path(__file__)`. `tools/build_exe.ps1` (via `GerarExecutavel.bat`) gera, roda `BrokCAM.exe --smoke-test`
+  (código ≠ 0 se faltar módulo/recurso) e cria o `.zip`. Ao incluir um arquivo de dados novo, acrescente-o em `datas`.
 - **Ícone do app:** `brokcam/ui/assets/` (`brokcam.svg` mestre, `brokcam-small.svg` para 16–24 px, `.ico` e PNG
   gerados por `tools/make_app_icon.py` — rode de novo ao mudar um SVG). `icons.app_icon()`/`app_pixmap()`. O
   renderizador SVG do Qt ignora `clipPath`: desenhe formas que já sigam os cantos. `CriarAtalho.bat` →
