@@ -7,7 +7,14 @@ usa [Versionamento Semântico](https://semver.org/lang/pt-BR/) — veja
 
 ## [Não lançado]
 
+_Nada ainda._
+
+## [0.4.0] — 2026-11-11
+
 ### Adicionado
+- **Executável para Windows** (`GerarExecutavel.bat` → `dist\BrokCAM\BrokCAM.exe` e
+  `dist\BrokCAM-0.4.0-windows-x64.zip`): roda sem instalar Python, com ícone e versão no
+  arquivo. O build é testado sozinho (`BrokCAM.exe --smoke-test` abre o exemplo e fecha).
 - **Furação — escolher a broca de cada diâmetro** (fluxo do FlatCAM): nova *Associação de
   diâmetros → Escolher a broca de cada diâmetro*. Na tabela *Diâmetros de furo* selecione vários
   diâmetros (Ctrl/Shift+clique) e use *Atribuir broca aos selecionados* (brocas da lista, outro
@@ -99,5 +106,6 @@ Primeira versão publicada no GitHub.
   overrides, sonda Z, heightmap (autolevel), macros e explicação de erros e alarmes.
 - Biblioteca de ferramentas, presets, edição manual de caminhos, posicionamento e dupla face.
 
-[Não lançado]: https://github.com/joao-goncalves-eng/BrokCAM/compare/v0.3.0...HEAD
+[Não lançado]: https://github.com/joao-goncalves-eng/BrokCAM/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/joao-goncalves-eng/BrokCAM/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/joao-goncalves-eng/BrokCAM/releases/tag/v0.3.0

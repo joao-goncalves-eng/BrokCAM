@@ -4,11 +4,11 @@
 
 **Do Gerber à placa fresada: um CAM para fabricar PCBs em casa com fresadoras e lasers GRBL.**
 
-![Versão](https://img.shields.io/badge/versão-0.3.0-2f81f7)
+![Versão](https://img.shields.io/badge/versão-0.4.0-2f81f7)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![Qt](https://img.shields.io/badge/PySide6-Qt%206-41CD52?logo=qt&logoColor=white)
 ![GRBL](https://img.shields.io/badge/GRBL-1.1-orange)
-![Testes](https://img.shields.io/badge/testes-348%20passando-238636)
+![Testes](https://img.shields.io/badge/testes-349%20passando-238636)
 ![Licença](https://img.shields.io/badge/licença-MIT-lightgrey)
 
 ![Tela principal do BrokCAM](docs/screenshots/main_dark.png)
@@ -90,6 +90,19 @@ Temas escuro, claro e alto contraste: ![Tema claro](docs/screenshots/main_light.
 Atalho para iniciantes: *Operações → Assistente "Gerber → GRBL em 4 passos"*.
 
 ## Instalação
+
+### Executável (mais fácil)
+
+Baixe `BrokCAM-<versão>-windows-x64.zip` em
+[Releases](https://github.com/joao-goncalves-eng/BrokCAM/releases), extraia e abra
+`BrokCAM\BrokCAM.exe` — não precisa instalar Python. Na primeira vez o Windows SmartScreen pode
+avisar "editor desconhecido" (o executável não é assinado): clique em *Mais informações → Executar
+assim mesmo*.
+
+Para gerar o executável a partir do código: `GerarExecutavel.bat` (cria `dist\BrokCAM\` e o
+`.zip`, e testa o resultado).
+
+### A partir do código
 
 Requer **Python 3.11** no Windows (o código também roda em Linux, mas o foco atual é Windows).
 
