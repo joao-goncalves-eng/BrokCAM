@@ -143,3 +143,35 @@ def test_gcode_comment_separates_file_and_machine_tool():
     line = next(ln for ln in g.splitlines() if ln.startswith("(Op "))
     assert line == "(Op T3 da maquina drill D1mm: Furos broca 1 mm - arquivo T3)"
     assert len(line) <= 70
+
+
+def test_bit_map_parse_and_format():
+    from brokcam.cam.drilling import format_bit_map, parse_bit_map
+    m = parse_bit_map("0,79=0,8; 1.02 : 1,0\n3,2=fresa; lixo; 1=x; 0,5->0,6")
+    assert m == {0.79: 0.8, 1.02: 1.0, 3.2: "fresa", 0.5: 0.6}
+    assert parse_bit_map(format_bit_map(m)) == m
+    assert format_bit_map({0.8: 1.0, 3.2: "fresa"}) == "0,8=1; 3,2=fresa"
+
+
+def test_manual_mapping_one_program_with_toolchanges():
+    """Vários diâmetros escolhidos à mão para a mesma broca → um programa, uma troca por broca."""
+    lay = _layer()
+    s = {"mapping": "manual", "bit_map": "0,8=1,0; 0,82=1,0; 3,2=fresa", "mill_large": False,
+         "mill_tool_dia": 1.0, "available_drills": "0.8, 1.0"}
+    job = drill(lay, s)
+    drills = [op for op in job.ops if op.kind == "drill"]
+    assert [(op.tool.number, op.tool.diameter, len(op.points)) for op in drills] == [(1, 1.0, 37)]
+    mills = [op for op in job.ops if op.kind == "mill"]
+    assert len(mills) == 1 and mills[0].tool.shape == "flat" and len(mills[0].paths) == 3
+    g = generate_gcode(job, {})
+    assert g.count("T2") >= 1                                  # fresa = 2ª ferramenta, com troca
+    # diâmetro sem escolha segue a regra da lista (0,82 → mais próxima 0,8)
+    job2 = drill(lay, {"mapping": "manual", "bit_map": "3,2=1,0", "available_drills": "0.8, 1.0"})
+    assert [(op.tool.diameter, len(op.points)) for op in job2.ops] == [(0.8, 25), (1.0, 15)]
+    # escolhido à mão não é fresado automaticamente, mesmo com "Fresar furos grandes"
+    job3 = drill(lay, {"mapping": "manual", "bit_map": "3,2=3,0", "mill_large": True,
+                       "available_drills": "0.8, 1.0"})
+    assert any(op.tool.diameter == 3.0 and op.kind == "drill" for op in job3.ops)
+    # um job por broca também respeita a escolha
+    jobs = drill_split(lay, {**s, "split_jobs": "per_bit"})
+    assert len(jobs) == 2 and _pts(jobs[:1]) == _pts([job])

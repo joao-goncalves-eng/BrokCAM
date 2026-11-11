@@ -43,6 +43,7 @@ class WelcomeView(QWidget):
         super().__init__(parent)
         self.setObjectName("Welcome")
         self.setAutoFillBackground(True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 24, 24, 24)
         outer.addStretch(1)
@@ -127,7 +128,10 @@ class WelcomeView(QWidget):
     def _refresh_theme(self) -> None:
         p = theme.palette()
         self.logo.setPixmap(pixmap("board", 44, p.accent, self.devicePixelRatioF()))
-        self.setStyleSheet(f"#Welcome {{ background: {p.canvas_bg}; }}")
+        grad = theme.manager().canvas_gradient()
+        bg = (f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {grad[0]}, stop:1 {grad[1]})" if grad
+              else p.canvas_bg)
+        self.setStyleSheet(f"#Welcome {{ background: {bg}; }}")
 
     def update_example(self) -> None:
         files = example_files()

@@ -65,8 +65,9 @@ set_conditions(CUTOUT, {
 set_conditions(DRILLING, {
     **_OPT,
     "group_tol": (("mapping", ("group",)),),
-    "available_drills": (("mapping", ("library",)),),
-    "library_rule": (("mapping", ("library",)),),
+    "available_drills": (("mapping", ("library", "manual")),),
+    "library_rule": (("mapping", ("library", "manual")),),
+    "bit_map": (("mapping", ("manual",)),),
     "slot_overlap": (("slot_strategy", ("mill",)),),
     "mill_tool_dia": (("mill_large", (True,)),),
     "mill_min_dia": (("mill_large", (True,)),),

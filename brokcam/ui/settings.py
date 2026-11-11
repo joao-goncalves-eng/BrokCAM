@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from brokcam.core.params import ParamGroup, ParamSpec, register
+from brokcam.core.params import ParamGroup, ParamSpec, register, set_conditions
 
 log = logging.getLogger("brokcam.ui.settings")
 
@@ -52,10 +52,43 @@ UI_GROUP = register(ParamGroup(
         "G-code gerado — apenas como as informações são exibidas."),
     params=(
         ParamSpec("theme", "Tema", "choice", "system",
-                  "Esquema de cores da interface. 'Sistema' acompanha automaticamente o modo "
-                  "claro/escuro do Windows e muda sozinho quando ele muda. Os temas escuro e "
-                  "claro foram ajustados para contraste mínimo AA (4,5:1) em todo texto.",
-                  choices=(("system", "Seguir o sistema"), ("dark", "Escuro"), ("light", "Claro"))),
+                  "Esquema de cores da interface, no estilo dos programas de CAD (Fusion 360, "
+                  "Inventor). 'Seguir o sistema' acompanha o modo claro/escuro do Windows. Escuro e "
+                  "Claro são cinzas neutros; Grafite é um cinza médio que cansa menos a vista em "
+                  "sessões longas; Azul-aço lembra o Inventor clássico; Meia-noite é um escuro "
+                  "azulado. Todos têm contraste mínimo AA (4,5:1) em todo texto.",
+                  choices=(("system", "Seguir o sistema"), ("dark", "Escuro"), ("light", "Claro"),
+                           ("graphite", "Grafite"), ("steel", "Azul-aço"), ("midnight", "Meia-noite"))),
+        ParamSpec("accent", "Cor de destaque", "choice", "theme",
+                  "Cor dos botões principais, da seleção, do foco e dos links. 'Padrão do tema' usa o "
+                  "azul de cada tema. Qualquer cor escolhida é ajustada automaticamente (mais clara ou "
+                  "mais escura) para o texto continuar legível. Também disponível em Exibir › "
+                  "Aparência e no botão de aparência da faixa de comandos.",
+                  choices=(("theme", "Padrão do tema"), ("blue", "Azul (Autodesk)"), ("royal", "Azul royal"),
+                           ("cyan", "Ciano"), ("green", "Verde"), ("orange", "Laranja"), ("red", "Vermelho"),
+                           ("pink", "Rosa"), ("purple", "Roxo"), ("amber", "Âmbar"), ("slate", "Grafite"),
+                           ("custom", "Personalizada"))),
+        ParamSpec("accent_custom", "Cor personalizada", "str", "#0696d7",
+                  "Cor de destaque no formato #RRGGBB (ex.: #0696d7), usada quando a cor de destaque é "
+                  "'Personalizada'. Pode ser a cor da sua marca ou da sua máquina."),
+        ParamSpec("canvas_style", "Fundo da área de trabalho", "choice", "gradient",
+                  "Degradê: fundo com transição suave de cor, como nos programas de CAD — ajuda a "
+                  "separar a placa do resto da interface. Sólido: uma cor só (melhor para capturas de "
+                  "tela e impressão).",
+                  choices=(("gradient", "Degradê (estilo CAD)"), ("solid", "Sólido"))),
+        ParamSpec("corners", "Cantos", "choice", "soft",
+                  "Arredondamento de botões, campos e painéis. Suaves é o visual dos programas de CAD; "
+                  "Arredondados é mais moderno; Retos é o mais sóbrio e compacto.",
+                  choices=(("soft", "Suaves"), ("round", "Arredondados"), ("square", "Retos"))),
+        ParamSpec("density", "Densidade", "choice", "comfortable",
+                  "Compacta reduz o espaçamento interno de botões, campos, listas e menus para caber "
+                  "mais informação na tela (bom em notebooks). Confortável facilita o clique.",
+                  choices=(("comfortable", "Confortável"), ("compact", "Compacta"))),
+        ParamSpec("colored_icons", "Ícones coloridos", "bool", True,
+                  "Mostra os ícones dos comandos em cores (isolar em cobre, furar em roxo, simular em "
+                  "verde…), como no Fusion 360, o que ajuda a encontrar cada comando de relance. "
+                  "Desligado, os ícones ficam na cor do texto. No alto contraste são sempre "
+                  "monocromáticos."),
         ParamSpec("high_contrast", "Alto contraste", "bool", False,
                   "Ativa um tema preto com texto branco, bordas fortes e destaque amarelo, "
                   "pensado para baixa visão ou telas sob luz intensa. Tem prioridade sobre o "
@@ -103,6 +136,7 @@ UI_GROUP = register(ParamGroup(
                   "ou com o zero de trabalho não definido."),
     ),
 ))
+set_conditions(UI_GROUP, {"accent_custom": (("accent", ("custom",)),)})
 
 
 def dynamic_spec(group: ParamGroup, key: str) -> ParamSpec | None:

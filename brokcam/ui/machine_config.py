@@ -286,7 +286,7 @@ class _Row:
             self.item.setForeground(COL_NAME, QColor(p.danger))
         elif mod:
             self.item.setText(COL_NAME, "● " + base)
-            self.item.setForeground(COL_NAME, QColor(p.accent))
+            self.item.setForeground(COL_NAME, QColor(p.accent_fg))
         else:
             self.item.setText(COL_NAME, base)
             self.item.setForeground(COL_NAME, QColor(p.text))

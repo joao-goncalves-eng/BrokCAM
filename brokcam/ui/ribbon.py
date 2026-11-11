@@ -141,6 +141,7 @@ class Ribbon(QFrame):
         self.right = QHBoxLayout()
         self.right.setSpacing(6)
         lay.addLayout(self.right)
+        self._left_count = 0
         self.groups: list[RibbonGroup] = []
         self._compact = False
         self._full_width = 0
@@ -170,6 +171,19 @@ class Ribbon(QFrame):
         self.groups.append(g)
         return g
 
+    def add_left(self, w: QWidget, title: str = "") -> RibbonGroup:
+        """Bloco fixo no início da faixa (ex.: seletor de espaço de trabalho), com título."""
+        g = RibbonGroup(title)
+        g.row.addWidget(w, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.groups_lay.insertWidget(self._left_count, g)
+        sep = QFrame()
+        sep.setObjectName("RibbonSep")
+        sep.setFrameShape(QFrame.Shape.VLine)
+        self.groups_lay.insertWidget(self._left_count + 1, sep)
+        self._left_count += 2
+        self.left_groups = getattr(self, "left_groups", []) + [g]
+        return g
+
     def add_right(self, w: QWidget) -> None:
         self.right.addWidget(w, 0, Qt.AlignmentFlag.AlignVCenter)
 
@@ -178,7 +192,7 @@ class Ribbon(QFrame):
         if on == self._compact:
             return
         self._compact = on
-        for g in self.groups:
+        for g in self.groups + getattr(self, "left_groups", []):
             g.title.setVisible(not on)
             for b in g.buttons:
                 if b.objectName() == "RibbonButton":
@@ -195,14 +209,16 @@ class SegmentedControl(QFrame):
     changed = Signal(str)
 
     def __init__(self, items: list[tuple[str, str, str]], accessible: str,
-                 parent: QWidget | None = None) -> None:
-        """``items``: lista de (chave, rótulo, ícone)."""
+                 parent: QWidget | None = None, vertical: bool = False) -> None:
+        """``items``: lista de (chave, rótulo, ícone). ``vertical`` empilha os botões (seletor de
+        espaço de trabalho no início da faixa, ocupando pouca largura)."""
         super().__init__(parent)
         self.setObjectName("Segmented")
+        self.setProperty("vertical", vertical)
         self.setAccessibleName(accessible)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(3, 3, 3, 3)
-        lay.setSpacing(2)
+        lay = QVBoxLayout(self) if vertical else QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0) if vertical else lay.setContentsMargins(3, 3, 3, 3)
+        lay.setSpacing(4 if vertical else 2)
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
         self._keys: list[str] = []

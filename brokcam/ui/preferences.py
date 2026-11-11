@@ -16,7 +16,7 @@ from .settings import UI_GROUP, AppSettings
 
 GROUP_ICONS = {"ui": "settings", "isolation": "isolation", "ncc": "ncc", "cutout": "cutout",
                "drilling": "drill", "panelize": "panelize", "grbl_post": "gcode", "grbl": "gcode",
-               "probe_z": "probe"}
+               "probe_z": "probe", "gcode_import": "import"}
 
 
 class PreferencesDialog(QDialog):

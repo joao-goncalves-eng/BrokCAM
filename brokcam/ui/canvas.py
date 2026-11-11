@@ -18,7 +18,7 @@ from typing import Any
 import numpy as np
 from PySide6.QtCore import QLineF, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QFontMetrics, QKeyEvent, QMouseEvent, QPainter, QPainterPath,
+    QBrush, QColor, QFont, QFontMetrics, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPainterPath,
     QPainterPathStroker, QPen, QSurfaceFormat, QTransform, QWheelEvent,
 )
 from PySide6.QtWidgets import (
@@ -124,10 +124,12 @@ def _paint_drill_groups(painter: QPainter, groups: list[DrillGroup], selected: b
     pal = theme.palette()
     halo_c = QColor("#000000" if pal.dark else "#ffffff")
     # desenha os apagados primeiro: o destacado fica por cima
-    for g in sorted(groups, key=lambda g: g.rank == highlight):
+    hl = set(highlight) if isinstance(highlight, (list, tuple, set)) else (
+        {highlight} if highlight is not None else set())
+    for g in sorted(groups, key=lambda g: g.rank in hl):
         c = QColor(theme.drill_color(g.rank))
-        dim = highlight is not None and g.rank != highlight
-        hot = highlight is not None and g.rank == highlight
+        dim = bool(hl) and g.rank not in hl
+        hot = bool(hl) and g.rank in hl
         fill = QColor(c)
         fill.setAlphaF(0.05 if dim else (min(fill_alpha + 0.3, 0.85) if hot else fill_alpha))
         painter.setPen(Qt.PenStyle.NoPen)
@@ -1070,8 +1072,8 @@ class CanvasView(QGraphicsView):
         if self._selected_key == key:
             self._selected_key = None
 
-    def highlight_drill(self, key: int, rank: int | None) -> None:
-        """Destaca no canvas os furos de um diâmetro (``rank``) da camada/job ``key``."""
+    def highlight_drill(self, key: int, rank: int | list[int] | None) -> None:
+        """Destaca no canvas os furos de um diâmetro (``rank``, ou lista deles) da camada/job ``key``."""
         for k, it in self.items_by_key.items():
             if isinstance(it, (LayerItem, JobItem)) and it.drill_groups:
                 it.highlight_rank = rank if k == key else None
@@ -1379,9 +1381,33 @@ class CanvasView(QGraphicsView):
                                   "angle": math.degrees(math.atan2(dy, dx))})
 
     # ------------------------------------------------------------------ desenho
+    def scrollContentsBy(self, dx: int, dy: int) -> None:  # noqa: N802
+        super().scrollContentsBy(dx, dy)
+        if theme.manager().canvas_gradient() is not None and not self.opengl:
+            # o degradê é fixo na tela: a cópia de pixels da rolagem o deslocaria
+            self.viewport().update()
+
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         pal = theme.palette()
-        painter.fillRect(rect, QColor(pal.canvas_bg))
+        grad = theme.manager().canvas_gradient()
+        if grad is not None:
+            # degradê vertical preso à TELA (não à cena): não "anda" com o zoom/deslocamento
+            painter.save()
+            painter.resetTransform()
+            vp = self.viewport().rect()
+            g = QLinearGradient(0, 0, 0, max(1, vp.height()))
+            g.setColorAt(0.0, QColor(grad[0]))
+            g.setColorAt(1.0, QColor(grad[1]))
+            painter.fillRect(vp, QBrush(g))
+            painter.restore()
+            # grade translúcida: legível tanto no topo claro quanto na base escura do degradê
+            ink = QColor(pal.text)
+            g_minor, g_major = QColor(ink), QColor(ink)
+            g_minor.setAlpha(16 if pal.dark else 20)
+            g_major.setAlpha(34 if pal.dark else 42)
+        else:
+            painter.fillRect(rect, QColor(pal.canvas_bg))
+            g_minor, g_major = QColor(pal.grid_minor), QColor(pal.grid_major)
         if not self.show_grid:
             self._draw_axes_lines(painter, rect)
             return
@@ -1391,7 +1417,7 @@ class CanvasView(QGraphicsView):
         mant = round(minor / unit / 10 ** math.floor(math.log10(minor / unit) + 1e-9))
         major = minor * {1: 10, 2: 5, 5: 2}.get(mant, 10)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        for step, col in ((minor, pal.grid_minor), (major, pal.grid_major)):
+        for step, col in ((minor, g_minor), (major, g_major)):
             if step * s < 6:
                 continue
             x0 = math.floor(rect.left() / step) * step

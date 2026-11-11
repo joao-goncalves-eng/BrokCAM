@@ -406,7 +406,7 @@ class MachinePanel(QWidget):
         for b in (115200, 250000, 230400, 57600, 38400, 19200, 9600):
             self.baud.addItem(str(b), b)
         self.connect_btn = QPushButton("&Conectar")
-        self.connect_btn.setIcon(icon("plug"))
+        self.connect_btn.setIcon(icon("plug", "accent_text"))
         self.connect_btn.setProperty("primary", True)
         self.connect_btn.setAccessibleName("Conectar ou desconectar da máquina")
         self.connect_btn.clicked.connect(self.toggle_connection)
@@ -631,7 +631,7 @@ class MachinePanel(QWidget):
         btns = QHBoxLayout()
         btns.setSpacing(6)
         self.start_btn = QPushButton("&Iniciar")
-        self.start_btn.setIcon(icon("play"))
+        self.start_btn.setIcon(icon("play", "accent_text"))
         self.start_btn.setProperty("primary", True)
         self.start_btn.setToolTip("Iniciar o envio do programa para a máquina")
         self.start_btn.clicked.connect(lambda: self.start_program())
@@ -838,7 +838,7 @@ class MachinePanel(QWidget):
             return
         self.connected = ok
         self.connect_btn.setText("&Desconectar" if ok else "&Conectar")
-        self.connect_btn.setIcon(icon("unplug" if ok else "plug"))
+        self.connect_btn.setIcon(icon("unplug") if ok else icon("plug", "accent_text"))
         theme.set_property(self.connect_btn, "primary", not ok)
         if not ok:
             self.streaming = False
@@ -940,7 +940,7 @@ class MachinePanel(QWidget):
 
     def console_append(self, kind: str, text: str) -> None:
         p = theme.palette()
-        col = {"tx": p.accent, "rx": p.text, "sys": p.text_muted, "err": p.danger, "warn": p.warning}.get(kind, p.text)
+        col = {"tx": p.accent_fg, "rx": p.text, "sys": p.text_muted, "err": p.danger, "warn": p.warning}.get(kind, p.text)
         prefix = {"tx": "›", "rx": "‹", "sys": "•", "err": "✖", "warn": "▲"}.get(kind, " ")
         self.console.appendHtml(f'<span style="color:{p.text_muted}">{prefix}</span> '
                                 f'<span style="color:{col}">{html.escape(text)}</span>')

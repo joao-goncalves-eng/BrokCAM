@@ -47,6 +47,7 @@ class GcodePreview:
     cut_length_mm: float = 0.0
     rapid_length_mm: float = 0.0
     warnings: list[str] = field(default_factory=list)
+    segment_feed: np.ndarray | None = None  # (K,) avanço F (mm/min) vigente em cada segmento
 
     def time_at_line(self, line: int) -> float:
         """Tempo estimado decorrido até o fim da linha ``line`` (0-based)."""
@@ -378,4 +379,5 @@ def parse_gcode(text: str, rapid_feed: float = 1000.0, accel_mm_s2: float | None
         cut_length_mm=float(length[~is_rapid].sum()) if k else 0.0,
         rapid_length_mm=float(length[is_rapid].sum()) if k else 0.0,
         warnings=warnings,
+        segment_feed=feeds_arr,
     )

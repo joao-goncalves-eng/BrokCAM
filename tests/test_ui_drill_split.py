@@ -273,3 +273,57 @@ def test_layer_offset_without_group_moves_jobs(win, tmp_path):
     from collections import Counter
     key = lambda a: Counter(map(tuple, np.round(a, 6).tolist()))  # noqa: E731
     assert key(reopened) == key(after)
+
+
+def test_assign_bits_to_selected_diameters_one_program(win):
+    """Fluxo do FlatCAM: vários diâmetros → uma broca escolhida à mão, tudo num só G-code."""
+    from brokcam.cam.drilling import DRILLING, parse_bit_map
+    from brokcam.gcode.grbl import generate_gcode
+    _layer_drill_ui(win)
+    t = win.props.drill_table
+    # Ctrl+clique: 0,6 e 0,8 → broca 0,8 ; 0,9 e 1,0 → broca 1,0
+    from PySide6.QtCore import QItemSelectionModel
+    sm = t.selectionModel()
+    sm.clearSelection()
+    for r in (0, 1):
+        sm.select(t.model().index(r, 0), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+    wait(20)
+    assert win.props.drill_assign_btn.isEnabled()
+    assert win.props.drill_assign_btn.text() == "Atribuir broca aos 2 diâmetros"
+    assert win.props.drill_only_btn.text() == "Gerar os 2 diâmetros num G-code"
+    win.props._assign_bits(win.project.layers[0], t, 0.8)
+    sm.clearSelection()
+    for r in (2, 3):
+        sm.select(t.model().index(r, 0), QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
+    wait(20)
+    win.props._assign_bits(win.project.layers[0], t, 1.0)
+    vals = win.props.form.values()
+    assert vals["mapping"] == "manual"
+    assert parse_bit_map(vals["bit_map"]) == {0.6: 0.8, 0.8: 0.8, 0.9: 1.0, 1.0: 1.0}
+    assert win.settings.group_values(DRILLING)["mapping"] == "manual"      # lembrado
+    assert not t.isColumnHidden(4) and t.item(0, 4).text() == "0,8 ✎" and t.item(2, 4).text() == "1 ✎"
+    win.props._primary_clicked()
+    assert wait_until(lambda: len(win.project.jobs) == 1 and not win.runner.busy())
+    job = win.project.jobs[0].job
+    assert [(o.tool.number, o.tool.diameter, len(o.points)) for o in job.ops] == [(1, 0.8, 13), (2, 1.0, 17)]
+    g = generate_gcode(job, {})
+    assert g.count("M0") == 1 or g.count("M6") >= 1          # uma troca entre as duas brocas
+
+
+def test_assign_mill_and_auto(win):
+    from brokcam.cam.drilling import parse_bit_map
+    _layer_drill_ui(win)
+    t = win.props.drill_table
+    t.selectRow(3)
+    wait(20)
+    e = win.project.layers[0]
+    vals = win.props.form.values()
+    vals.update({"mill_tool_dia": 0.5})
+    win.props.form.set_values(vals)
+    win.props._assign_bits(e, t, "fresa")
+    assert parse_bit_map(win.props.form.values()["bit_map"])[1.0] == "fresa"
+    assert t.item(3, 4).text().startswith("fresa ")
+    win.props._assign_bits(e, t, None)                     # volta ao automático
+    assert 1.0 not in parse_bit_map(win.props.form.values()["bit_map"])
+    win.props._assign_bits(e, t, None, all_rows=True)
+    assert win.props.form.values()["bit_map"] == ""

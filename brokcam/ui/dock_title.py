@@ -27,8 +27,8 @@ class DockTitleBar(QWidget):
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 2, 4, 2)
         lay.setSpacing(2)
-        self.title = QLabel(dock.windowTitle())
-        self.title.setObjectName("Muted")
+        self.title = QLabel(dock.windowTitle().upper())      # cabeçalho em versalete, como no Fusion
+        self.title.setObjectName("DockTitle")
         lay.addWidget(self.title)
         lay.addStretch(1)
         self.float_btn = QToolButton()
@@ -49,7 +49,7 @@ class DockTitleBar(QWidget):
         dock.topLevelChanged.connect(lambda _f: self.sync())
         dock.dockLocationChanged.connect(lambda _a: self.sync())
         dock.featuresChanged.connect(lambda _f: self.sync())
-        dock.windowTitleChanged.connect(self.title.setText)
+        dock.windowTitleChanged.connect(lambda t: self.title.setText(t.upper()))
         self.sync()
 
     def _tabbed(self) -> bool:

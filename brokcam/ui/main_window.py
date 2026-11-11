@@ -8,11 +8,11 @@ from typing import Any
 
 from PySide6.QtCore import QByteArray, QSize, Qt, QTimer
 from PySide6.QtGui import (
-    QAction, QActionGroup, QCloseEvent, QDragEnterEvent, QDragLeaveEvent, QDropEvent, QKeySequence,
-    QUndoStack,
+    QAction, QActionGroup, QCloseEvent, QColor, QDragEnterEvent, QDragLeaveEvent, QDropEvent, QIcon,
+    QKeySequence, QUndoStack,
 )
 from PySide6.QtWidgets import (
-    QDockWidget, QFileDialog, QFrame, QHBoxLayout, QScrollArea, QLabel, QMainWindow, QMessageBox,
+    QDockWidget, QFileDialog, QFrame, QHBoxLayout, QScrollArea, QLabel, QMainWindow, QMenu, QMessageBox,
     QProgressBar, QStackedWidget, QTabWidget, QToolBar, QToolButton, QWidget,
 )
 
@@ -39,7 +39,7 @@ from .preferences import PreferencesDialog
 from .project import JobEntry, LayerEntry, Project, Transform, read_project_file
 from .project_panel import ProjectPanel
 from .ribbon import Ribbon, SegmentedControl
-from .settings import AppSettings
+from .settings import UI_GROUP, AppSettings
 from .tool_library import ToolLibraryDialog, library
 from .welcome import WelcomeView, example_files
 from .wizard import FILE_FILTER, PcbWizard, WizardFile, WizardResult
@@ -182,8 +182,8 @@ class MainWindow(QMainWindow):
         self.machine_docks = (self.dock_machine, self.dock_jog, self.dock_program, self.dock_console,
                               self.dock_grbl, self.dock_tools, self.dock_machine_cfg)
         self.all_docks = (self.dock_project, self.dock_props, self.dock_log, self.dock_gcode) + self.machine_docks
-        # barra compacta (só botões quando em abas; título quando sozinho ou destacado)
-        for d in (self.dock_log, self.dock_gcode) + self.machine_docks:
+        # barra compacta (só botões quando em abas; título em versalete quando sozinho ou destacado)
+        for d in self.all_docks:
             d.setTitleBarWidget(DockTitleBar(d))
         self._bar_sync = QTimer(self)
         self._bar_sync.setSingleShot(True)
@@ -301,6 +301,13 @@ class MainWindow(QMainWindow):
         self.a_new = A("&Novo projeto", self.new_project, "new", QKeySequence.StandardKey.New, "Fechar tudo e começar um projeto vazio")
         self.a_open = A("&Abrir…", self.open_dialog, "open", QKeySequence.StandardKey.Open, "Abrir Gerber, Excellon, G-code ou projeto (Ctrl+O)")
         self.a_example = A("Abrir &exemplo", self.open_example, "board", None, "Carregar os arquivos de exemplo de tests/data")
+        self.a_import_gcode = A("&Importar G-code como caminhos…", self.import_gcode_dialog, "import",
+                                QKeySequence("Ctrl+Shift+O"),
+                                "Abre um ou vários G-code (.nc/.gcode) como caminhos editáveis + geometria: dá para "
+                                "mover com a placa, editar caminhos, simular e gerar o G-code de novo (Ctrl+Shift+O)")
+        self.a_view_gcode = A("Abrir G-code só para &visualizar/enviar…", self.view_gcode_dialog, "gcode", None,
+                              "Mostra um G-code no painel G-code (pré-visualização e envio), sem criar caminhos "
+                              "no projeto")
         self.a_save = A("&Salvar projeto", self.save_project, "save", QKeySequence.StandardKey.Save, "Salvar o projeto (.bcam)")
         self.a_save_as = A("Salvar projeto &como…", self.save_project_as, None, QKeySequence("Ctrl+Shift+S"))
         self.a_export = A("&Exportar G-code…", self.export_gcode, "export", QKeySequence("Ctrl+E"), "Salvar o G-code do caminho selecionado ou de todos")
@@ -441,10 +448,10 @@ class MainWindow(QMainWindow):
     def _build_menus(self) -> None:
         mb = self.menuBar()
         m = mb.addMenu("&Arquivo")
-        m.addActions([self.a_new, self.a_open])
+        m.addActions([self.a_new, self.a_open, self.a_import_gcode])
         self.recent_menu = m.addMenu(icon("restore"), "Abrir &recente")
         self.recent_menu.aboutToShow.connect(self._fill_recent)
-        m.addAction(self.a_example)
+        m.addActions([self.a_example, self.a_view_gcode])
         m.addSeparator()
         m.addActions([self.a_save, self.a_save_as])
         m.addSeparator()
@@ -471,18 +478,8 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addActions([self.a_grid, self.a_rulers, self.a_rapids, self.a_toolwidth, self.a_measure])
         m.addSeparator()
-        theme_menu = m.addMenu(icon("contrast"), "&Tema")
-        grp = QActionGroup(self)
-        self.theme_actions: dict[str, QAction] = {}
-        for key, lab in (("system", "Seguir o sistema"), ("dark", "Escuro"), ("light", "Claro")):
-            a = QAction(lab, self, checkable=True)
-            a.setChecked(self.settings.ui("theme") == key)
-            a.triggered.connect(lambda _=False, k=key: self.set_theme(k))
-            grp.addAction(a)
-            theme_menu.addAction(a)
-            self.theme_actions[key] = a
-        theme_menu.addSeparator()
-        theme_menu.addActions([self.a_theme, self.a_hc])
+        self.appearance_menu = m.addMenu(icon("contrast"), "&Aparência")
+        self._build_appearance_menu(self.appearance_menu)
         m.addActions([self.a_font_up, self.a_font_down, self.a_units])
         m.addSeparator()
         panels = m.addMenu("&Painéis")
@@ -525,7 +522,7 @@ class MainWindow(QMainWindow):
 
         g = rb.group("Arquivo")
         open_menu = QMenu(self)
-        open_menu.addActions([self.a_new, self.a_example])
+        open_menu.addActions([self.a_new, self.a_import_gcode, self.a_example])
         open_menu.addMenu(self.recent_menu)
         open_menu.addSeparator()
         open_menu.addAction(self.a_save_as)
@@ -565,11 +562,13 @@ class MainWindow(QMainWindow):
         g.add(self.a_gcode, gcode_menu)
         g.add(self.a_send)
 
+        # seletor de espaço de trabalho à esquerda da faixa (como o "DESIGN ▾" do Fusion 360)
         self.workspace = SegmentedControl([("prepare", "Preparar", "layers"), ("machine", "Máquina", "machine")],
-                                          "Espaço de trabalho")
+                                          "Espaço de trabalho", vertical=True)
         self.workspace.setToolTip("Preparar: arquivos, operações e caminhos. Máquina: controle da CNC, "
                                   "envio do programa e configurações (Ctrl+Tab alterna).")
         self.workspace.changed.connect(self.set_workspace)
+        rb.add_left(self.workspace, "Espaço")
         # acesso rápido (como no Fusion 360): desfazer/refazer sempre à mão
         for a in (self.a_undo, self.a_redo):
             qb = QToolButton()
@@ -578,8 +577,20 @@ class MainWindow(QMainWindow):
             qb.setIconSize(QSize(18, 18))
             qb.setAccessibleName(a.text().replace("&", ""))
             rb.add_right(qb)
-        rb.add_right(self.workspace)
-        for a in (self.a_theme, self.a_prefs, self.a_guide):
+        look = QToolButton()
+        look.setIcon(icon("contrast"))
+        look.setAutoRaise(True)
+        look.setIconSize(QSize(18, 18))
+        look.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        look.setToolTip("Aparência: tema (claro, escuro, grafite, azul-aço, meia-noite), cor de destaque, "
+                        "fundo, cantos e densidade")
+        look.setAccessibleName("Aparência")
+        look_menu = QMenu(look)
+        self._build_appearance_menu(look_menu)
+        look.setMenu(look_menu)
+        self.appearance_btn = look
+        rb.add_right(look)
+        for a in (self.a_prefs, self.a_guide):
             b = QToolButton()
             b.setDefaultAction(a)
             b.setAutoRaise(True)
@@ -682,6 +693,8 @@ class MainWindow(QMainWindow):
         pr.generateRequested.connect(self.generate_path)
         pr.generateOnceRequested.connect(lambda lid, key, vals: self.generate_path(lid, key, vals, remember=False))
         pr.drillHighlight.connect(self.canvas.highlight_drill)
+        pr.statusMessage.connect(lambda msg, ms: self.statusBar().showMessage(msg, ms))
+        pr.editOpsRequested.connect(lambda jid, ops, text: self.undo.push(EditJobOpsCmd(self.project, jid, ops, text)))
         pr.cancelRequested.connect(self.cancel_task)
         pr.gcodeRequested.connect(self.generate_gcode)
         pr.simulateRequested.connect(self.simulate_job)
@@ -726,7 +739,7 @@ class MainWindow(QMainWindow):
         s = self.settings
         units.set_display_units(str(s.ui("units")))
         theme.manager().configure(mode=str(s.ui("theme")), high_contrast=bool(s.ui("high_contrast")),
-                                  font_scale=int(s.ui("font_scale")) / 100.0)
+                                  font_scale=int(s.ui("font_scale")) / 100.0, **self._style_kwargs())
         if not initial:
             self.canvas.circle_segments = int(s.ui("circle_segments"))
             self.canvas.set_opengl(bool(s.ui("opengl")))
@@ -735,9 +748,7 @@ class MainWindow(QMainWindow):
             self.canvas.set_show_rapids(bool(s.ui("show_rapids")))
             self.canvas.set_antialias(bool(s.ui("antialias")))
             self.machine.confirm_send = bool(s.ui("confirm_send"))
-            for key, a in getattr(self, "theme_actions", {}).items():
-                a.setChecked(key == s.ui("theme"))
-            self.a_hc.setChecked(bool(s.ui("high_contrast")))
+            self._sync_appearance_menu()
             self.a_units.blockSignals(True)
             self.a_units.setChecked(units.display_units() == "in")
             self.a_units.blockSignals(False)
@@ -760,10 +771,155 @@ class MainWindow(QMainWindow):
         if hasattr(self, "units_btn"):
             self.units_btn.setText(units.unit_label())
 
+    def _style_kwargs(self) -> dict[str, Any]:
+        s = self.settings
+        return {"accent": str(s.ui("accent")), "accent_custom": str(s.ui("accent_custom")),
+                "canvas": str(s.ui("canvas_style")), "corners": str(s.ui("corners")),
+                "density": str(s.ui("density")), "colored_icons": bool(s.ui("colored_icons"))}
+
+    # ------------------------------------------------------------------ aparência
+    def _build_appearance_menu(self, menu: QMenu) -> None:
+        """Menu "Aparência": tema, cor de destaque (amostras), fundo, cantos, densidade, ícones.
+
+        Usado em Exibir › Aparência e no botão de aparência da faixa de comandos; tudo é
+        aplicado na hora e lembrado nas preferências.
+        """
+        from PySide6.QtGui import QPixmap
+        menu.setToolTipsVisible(True)
+        hdr = menu.addAction("Tema")
+        hdr.setEnabled(False)
+        grp = QActionGroup(menu)
+        self.theme_actions: dict[str, QAction] = {}
+        spec = UI_GROUP.spec("theme")
+        bases = {"dark": theme.DARK, "light": theme.LIGHT, "graphite": theme.GRAPHITE, "steel": theme.STEEL,
+                 "midnight": theme.MIDNIGHT}
+        for key, lab in spec.choices:
+            pm = QPixmap(16, 16)
+            pm.fill(Qt.GlobalColor.transparent)
+            pal = bases.get(key)
+            if pal is not None:
+                from PySide6.QtGui import QPainter
+                pt = QPainter(pm)
+                pt.setRenderHint(QPainter.RenderHint.Antialiasing)
+                pt.setPen(QColor(pal.border_strong))
+                pt.setBrush(QColor(pal.surface))
+                pt.drawRoundedRect(1, 1, 14, 14, 3, 3)
+                pt.setPen(Qt.PenStyle.NoPen)
+                pt.setBrush(QColor(pal.canvas_top))
+                pt.drawRoundedRect(5, 5, 10, 10, 2, 2)
+                pt.end()
+            a = QAction(QIcon(pm) if pal is not None else icon("contrast"), lab, menu, checkable=True)
+            a.triggered.connect(lambda _=False, k=key: self.set_theme(k))
+            grp.addAction(a)
+            menu.addAction(a)
+            self.theme_actions[key] = a
+        menu.addAction(self.a_hc)
+        menu.addAction(self.a_theme)
+        menu.addSeparator()
+        acc = menu.addMenu("Cor de &destaque")
+        acc.setToolTipsVisible(True)
+        agrp = QActionGroup(acc)
+        self.accent_actions: dict[str, QAction] = {}
+        for key, lab, seed in theme.ACCENTS:
+            pm = QPixmap(16, 16)
+            pm.fill(Qt.GlobalColor.transparent)
+            col = seed or (str(self.settings.ui("accent_custom")) if key == "custom" else None)
+            if col:
+                from PySide6.QtGui import QPainter
+                pt = QPainter(pm)
+                pt.setRenderHint(QPainter.RenderHint.Antialiasing)
+                pt.setPen(QColor(0, 0, 0, 60))
+                pt.setBrush(QColor(col))
+                pt.drawEllipse(1, 1, 14, 14)
+                pt.end()
+            a = QAction(QIcon(pm) if col else icon("contrast"), lab, acc, checkable=True)
+            a.triggered.connect(lambda _=False, k=key: self.set_accent(k))
+            agrp.addAction(a)
+            acc.addAction(a)
+            self.accent_actions[key] = a
+        self.appearance_toggles: dict[str, QAction] = {}
+
+        def toggle(text: str, key: str, on_value: str, off_value: str, tip: str) -> None:
+            a = QAction(text, menu, checkable=True)
+            a.setToolTip(tip)
+            a.toggled.connect(lambda on, k=key, v1=on_value, v0=off_value: self.set_ui_style(k, v1 if on else v0))
+            menu.addAction(a)
+            self.appearance_toggles[key] = a
+
+        menu.addSeparator()
+        toggle("Fundo em &degradê (estilo CAD)", "canvas_style", "gradient", "solid",
+               "Fundo da área de trabalho com degradê suave; desligado = cor sólida")
+        a_ic = QAction("Ícones &coloridos", menu, checkable=True)
+        a_ic.setToolTip("Ícones dos comandos em cores, como no Fusion 360")
+        a_ic.toggled.connect(lambda on: self.set_ui_style("colored_icons", on))
+        menu.addAction(a_ic)
+        self.appearance_toggles["colored_icons"] = a_ic
+        toggle("Interface com&pacta", "density", "compact", "comfortable",
+               "Menos espaçamento interno em botões, campos e listas")
+        corners = menu.addMenu("Can&tos")
+        cgrp = QActionGroup(corners)
+        self.corner_actions: dict[str, QAction] = {}
+        for key, lab in UI_GROUP.spec("corners").choices:
+            a = QAction(lab, corners, checkable=True)
+            a.triggered.connect(lambda _=False, k=key: self.set_ui_style("corners", k))
+            cgrp.addAction(a)
+            corners.addAction(a)
+            self.corner_actions[key] = a
+        menu.addSeparator()
+        more = menu.addAction(icon("settings"), "Mais opções de aparência…")
+        more.triggered.connect(self.open_preferences)
+        menu.aboutToShow.connect(self._sync_appearance_menu)
+        self._sync_appearance_menu()
+
+    def _sync_appearance_menu(self) -> None:
+        s = self.settings
+        for key, a in getattr(self, "theme_actions", {}).items():
+            a.setChecked(key == s.ui("theme") and not bool(s.ui("high_contrast")))
+        for key, a in getattr(self, "accent_actions", {}).items():
+            a.setChecked(key == s.ui("accent"))
+            a.setEnabled(not bool(s.ui("high_contrast")))
+        for key, a in getattr(self, "corner_actions", {}).items():
+            a.setChecked(key == s.ui("corners"))
+        tg = getattr(self, "appearance_toggles", {})
+        vals = {"canvas_style": s.ui("canvas_style") == "gradient", "density": s.ui("density") == "compact",
+                "colored_icons": bool(s.ui("colored_icons"))}
+        for key, a in tg.items():
+            a.blockSignals(True)
+            a.setChecked(vals.get(key, False))
+            a.blockSignals(False)
+        if hasattr(self, "a_hc"):
+            self.a_hc.blockSignals(True)
+            self.a_hc.setChecked(bool(s.ui("high_contrast")))
+            self.a_hc.blockSignals(False)
+
+    def set_accent(self, key: str) -> None:
+        if key == "custom":
+            from PySide6.QtWidgets import QColorDialog
+            cur = QColor(str(self.settings.ui("accent_custom")))
+            col = QColorDialog.getColor(cur if cur.isValid() else QColor("#0696d7"), self, "Cor de destaque")
+            if not col.isValid():
+                self._sync_appearance_menu()
+                return
+            self.settings.set_ui("accent_custom", col.name())
+        self.settings.set_ui("accent", key)
+        self.settings.save()
+        theme.manager().configure(**self._style_kwargs())
+        self._sync_appearance_menu()
+
+    def set_ui_style(self, key: str, value: Any) -> None:
+        """Muda uma opção de estilo (canvas_style, corners, density, colored_icons) e aplica."""
+        self.settings.set_ui(key, value)
+        self.settings.save()
+        theme.manager().configure(**self._style_kwargs())
+        self.canvas.viewport().update()
+        self._sync_appearance_menu()
+
     def set_theme(self, mode: str) -> None:
         self.settings.set_ui("theme", mode)
+        self.settings.set_ui("high_contrast", False)
         self.settings.save()
-        theme.manager().configure(mode=mode)
+        theme.manager().configure(mode=mode, high_contrast=False)
+        self._sync_appearance_menu()
 
     def toggle_theme(self) -> None:
         cur = theme.palette().dark
@@ -771,13 +927,12 @@ class MainWindow(QMainWindow):
         self.a_hc.setChecked(False)
         mode = "light" if cur else "dark"
         self.set_theme(mode)
-        if mode in self.theme_actions:
-            self.theme_actions[mode].setChecked(True)
 
     def _set_high_contrast(self, on: bool) -> None:
         self.settings.set_ui("high_contrast", on)
         self.settings.save()
         theme.manager().configure(high_contrast=on)
+        self._sync_appearance_menu()
 
     def _font_step(self, delta: int) -> None:
         v = max(100, min(200, int(self.settings.ui("font_scale")) + delta))
@@ -1041,10 +1196,102 @@ class MainWindow(QMainWindow):
             self.open_files(paths)
 
     def open_gcode_dialog(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Abrir G-code", self.last_dir,
+        """Botão "Abrir…" do painel G-code: só visualizar/enviar (não cria caminhos)."""
+        self.view_gcode_dialog()
+
+    def view_gcode_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Abrir G-code para visualizar/enviar", self.last_dir,
                                               "G-code (*.nc *.gcode *.ngc *.tap *.gc *.cnc);;Todos os arquivos (*)")
         if path:
-            self.open_files([path])
+            self.last_dir = os.path.dirname(os.path.abspath(path))
+            self.load_gcode_file(path)
+
+    def import_gcode_dialog(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(self, "Importar G-code como caminhos", self.last_dir,
+                                                "G-code (*.nc *.gcode *.ngc *.tap *.gc *.cnc);;Todos os arquivos (*)")
+        if paths:
+            self.last_dir = os.path.dirname(os.path.abspath(paths[0]))
+            self.import_gcode_files(paths)
+
+    def import_gcode_files(self, paths: list[str]) -> None:
+        """Importa G-code como caminhos editáveis + camada de geometria (um par por arquivo).
+
+        Vários arquivos abertos juntos (isolamento, furos, recorte da mesma placa) viram um
+        grupo, como os Gerber: movem e giram juntos. O texto original fica no caminho — enviar
+        sem editar manda exatamente o arquivo aberto.
+        """
+        from brokcam.gcode.importer import GCODE_IMPORT, import_gcode_file
+        opts = self.settings.group_values(GCODE_IMPORT)
+
+        def work(progress: Any, cancel: Any) -> list[tuple[str, Any]]:
+            out: list[tuple[str, Any]] = []
+            for i, p in enumerate(paths):
+                if cancel():
+                    break
+                progress(i / len(paths), f"Lendo {os.path.basename(p)}…")
+                try:
+                    out.append((p, import_gcode_file(p, opts)))
+                except Exception as exc:  # noqa: BLE001 - reportado ao usuário
+                    out.append((p, exc))
+            progress(1.0, "")
+            return out
+
+        self._submit(f"Importando {len(paths)} G-code", work, self._on_gcode_imported)
+
+    def _on_gcode_imported(self, results: list[tuple[str, Any]]) -> None:
+        errors: list[str] = []
+        pairs: list[tuple[LayerEntry, JobEntry]] = []
+        rapid = float(self.settings.ui("rapid_rate"))
+        taken = {j.name for j in self.project.jobs}
+        for path, res in results:
+            if isinstance(res, Exception):
+                errors.append(f"{os.path.basename(path)}: {res}")
+                log.error("Falha ao importar %s: %s", path, res)
+                continue
+            role = backend.guess_role(path)
+            if role == "unknown" and all(op.kind == "drill" for op in res.job.ops):
+                role = "drill"
+            le = LayerEntry(res.geometry, role, visible=bool(res.stats.get("show_geometry", True)))
+            res.job.name = self._unique_job_name(res.job.name, taken)
+            taken.add(res.job.name)
+            je = JobEntry(res.job, le.id)
+            try:
+                je.estimate_s = backend.parse_gcode(res.job.gcode, rapid).estimate_time_s
+            except Exception:  # noqa: BLE001 - estimativa é opcional
+                je.estimate_s = backend.estimate_job_time_s(res.job, rapid)
+            pairs.append((le, je))
+            st = res.stats
+            log.info("G-code importado: %s — %d operação(ões), %d caminho(s), %d furo(s), %d ferramenta(s)",
+                     os.path.basename(path), st["ops"], st["paths"], st["holes"], st["tools"])
+            for w in res.warnings:
+                log.warning("%s: %s", os.path.basename(path), w)
+            for n in res.notes:
+                log.info("%s: %s", os.path.basename(path), n)
+            self.settings.add_recent(path)
+        if pairs:
+            was_empty = self.project.is_empty()
+            self.undo.beginMacro(f"Importar {len(pairs)} G-code")
+            try:
+                self.undo.push(AddLayersCmd(self.project, [le for le, _j in pairs]))
+                if len(pairs) > 1 and bool(self.settings.get("auto_group", True)):
+                    name = self.project.suggest_group_name()
+                    self.undo.push(GroupCmd(self.project, [le.id for le, _j in pairs], self.project.new_group_id(),
+                                            name, f"Agrupar como {name}"))
+                for _le, je in pairs:
+                    self.undo.push(AddJobCmd(self.project, je))
+            finally:
+                self.undo.endMacro()
+            self.settings.save()
+            self.welcome.set_recent(self.settings.recent)
+            if was_empty:
+                QTimer.singleShot(0, self.canvas.fit_all)
+            self.project_panel.select("job", pairs[0][1].id)
+            n_ops = sum(len(je.job.ops) for _le, je in pairs)
+            self.statusBar().showMessage(
+                f"{len(pairs)} G-code importado(s) como caminhos editáveis ({n_ops} operação(ões)). Edite os "
+                "caminhos, mova a placa ou gere o G-code de novo pelo pós-processador.", 8000)
+        if errors:
+            QMessageBox.warning(self, "Importar G-code", "Não foi possível importar:\n\n" + "\n".join(errors[:12]))
 
     def open_example(self) -> None:
         files = example_files()
@@ -1077,8 +1324,11 @@ class MainWindow(QMainWindow):
         if projects:
             self.open_project(projects[0])
             return
-        for g in gcodes[:1]:
-            self.load_gcode_file(g)
+        if gcodes:
+            # G-code aberto pelo Abrir/arrastar/recentes vira caminho editável (o texto original
+            # continua no caminho, para enviar sem mudanças); "Abrir G-code só para visualizar"
+            # mantém o comportamento antigo
+            self.import_gcode_files(gcodes)
         if layers:
             self.load_layers(layers)
 
@@ -1217,10 +1467,10 @@ class MainWindow(QMainWindow):
                     break
                 idx = int(js.get("source", -1))
                 op = ops.get(js.get("operation", ""))
-                if js.get("ops") and 0 <= idx < len(loaded) and not isinstance(loaded[idx], Exception):
+                if js.get("ops") and (idx < 0 or (idx < len(loaded) and not isinstance(loaded[idx], Exception))):
                     # caminhos editados à mão: restaura exatamente como foram salvos
                     from brokcam.core.serialize import ops_from_json
-                    job = Job(name=js.get("name") or "Caminho editado", source_id=loaded[idx].id,
+                    job = Job(name=js.get("name") or "Caminho editado", source_id=loaded[idx].id if idx >= 0 else -1,
                               ops=ops_from_json(js["ops"]), operation=js.get("operation", ""),
                               settings=dict(js.get("settings") or {}))
                     jobs.append((idx, job))
@@ -1265,8 +1515,9 @@ class MainWindow(QMainWindow):
                 if isinstance(job, Exception):
                     errors.append(str(job))
                     continue
-                if isinstance(job, Job) and 0 <= idx < len(entries) and entries[idx] is not None:
-                    je = JobEntry(job, entries[idx].id, bool(js.get("visible", True)))  # type: ignore[union-attr]
+                if isinstance(job, Job) and (idx < 0 or (idx < len(entries) and entries[idx] is not None)):
+                    src_id = entries[idx].id if idx >= 0 else -1          # type: ignore[union-attr]
+                    je = JobEntry(job, src_id, bool(js.get("visible", True)))
                     je.estimate_s = backend.estimate_job_time_s(job, float(self.settings.ui("rapid_rate")))
                     self.project.add_job(je)
             groups = {int(k): v for k, v in (data.get("groups") or {}).items()}
@@ -1442,6 +1693,8 @@ class MainWindow(QMainWindow):
         def done(res: tuple[str, float]) -> None:
             text, est = res
             j.job.gcode = text
+            if j.job.settings.get("imported"):
+                j.job.settings["regenerated"] = True   # não é mais o texto do arquivo
             if est:
                 j.estimate_s = est
             self.project.jobChanged.emit(j)
@@ -1603,6 +1856,8 @@ class MainWindow(QMainWindow):
             for (j, _job), (text, est), path in zip(todo, res, paths):
                 if not j.job.gcode:
                     j.job.gcode = text
+                    if j.job.settings.get("imported"):
+                        j.job.settings["regenerated"] = True   # não é mais o texto do arquivo
                     if est:
                         j.estimate_s = est
                     self.project.jobChanged.emit(j)

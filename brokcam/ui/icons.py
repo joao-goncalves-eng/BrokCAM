@@ -3,6 +3,9 @@
 Os arquivos em ``icons/`` usam ``currentColor``; o :class:`ThemedIconEngine` troca
 essa cor pela cor do tema atual no momento da pintura (normal, desabilitado,
 selecionado/ativo), então os ícones mudam junto com o tema sem recriar QIcons.
+
+Com "Ícones coloridos" (Aparência) os ícones de comando ganham a cor de
+:data:`theme.ICON_TINTS` — ajustada ao tema para contraste ≥ 3:1 —, como no Fusion 360.
 """
 from __future__ import annotations
 
@@ -46,7 +49,8 @@ class ThemedIconEngine(QIconEngine):
             return getattr(p, self.token)
         if mode == QIcon.Mode.Selected:
             return p.selection_text
-        return p.text
+        tint = theme.icon_tint(self.name, p)
+        return tint or p.text
 
     def paint(self, painter: QPainter, rect: QRect, mode: QIcon.Mode, state: QIcon.State) -> None:
         _renderer(self.name, self._color(mode, state)).render(painter, QRectF(rect))

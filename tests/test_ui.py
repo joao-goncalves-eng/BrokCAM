@@ -331,6 +331,57 @@ def test_theme_contrast_aa(qapp):
         assert contrast_ratio(pal.selection_text, pal.selection) >= 4.5, pal.name
 
 
+def test_all_themes_and_accents_contrast_aa(qapp):
+    """Toda base × toda cor de destaque (inclusive uma personalizada clara) continua AA."""
+    from brokcam.ui.theme import ACCENTS, BASES, HIGH_CONTRAST, contrast_ratio, derive_palette
+    for base in list(BASES.values()) + [HIGH_CONTRAST]:
+        for key, _lab, seed in ACCENTS:
+            pal = derive_palette(base, "#ffee00" if key == "custom" else seed)
+            for bg in (pal.window, pal.surface, pal.surface_alt, pal.elevated, pal.header, pal.ribbon):
+                for tok in ("text", "text_muted", "accent_fg"):
+                    assert contrast_ratio(getattr(pal, tok), bg) >= 4.5, (base.name, key, tok, bg)
+            assert contrast_ratio(pal.accent_text, pal.accent) >= 4.5, (base.name, key)
+            assert contrast_ratio(pal.accent_text, pal.accent_hover) >= 4.5, (base.name, key)
+            assert contrast_ratio(pal.selection_text, pal.selection) >= 4.5, (base.name, key)
+
+
+def test_appearance_menu_applies_and_remembers(qapp, tmp_path):
+    from brokcam.ui import theme
+    from brokcam.ui.main_window import MainWindow
+    from brokcam.ui.settings import AppSettings
+    w = MainWindow(AppSettings(tmp_path / "s.json"))
+    try:
+        w.theme_actions["graphite"].trigger()
+        assert theme.palette().name == "grafite" and w.settings.ui("theme") == "graphite"
+        w.accent_actions["orange"].trigger()
+        assert w.settings.ui("accent") == "orange"
+        assert theme.palette().accent != theme.GRAPHITE.accent
+        w.appearance_toggles["canvas_style"].setChecked(False)
+        assert w.settings.ui("canvas_style") == "solid" and theme.manager().canvas_gradient() is None
+        w.appearance_toggles["canvas_style"].setChecked(True)
+        assert theme.manager().canvas_gradient() is not None
+        w.corner_actions["square"].trigger()
+        assert theme.manager().style.radii()[0] == 0
+        w.appearance_toggles["colored_icons"].setChecked(False)
+        assert theme.icon_tint("drill") is None
+        w.appearance_toggles["colored_icons"].setChecked(True)
+        assert theme.icon_tint("drill") is not None
+        w.a_hc.trigger()
+        assert theme.palette().name == "alto contraste" and theme.icon_tint("drill") is None
+        assert not w.accent_actions["blue"].isEnabled()
+        w.theme_actions["dark"].trigger()                  # escolher um tema sai do alto contraste
+        assert theme.palette().name == "escuro" and not w.settings.ui("high_contrast")
+    finally:
+        for k, v in (("theme", "dark"), ("accent", "theme"), ("corners", "soft"), ("high_contrast", False)):
+            w.settings.set_ui(k, v)
+        theme.manager().configure(mode="dark", high_contrast=False, accent="theme", corners="soft",
+                                  canvas="gradient", density="comfortable", colored_icons=True)
+        w.project.set_modified(False)
+        w.machine.shutdown()
+        w.close()
+        w.deleteLater()
+
+
 def test_icons_render(qapp):
     from brokcam.ui.icons import available, icon
     names = available()

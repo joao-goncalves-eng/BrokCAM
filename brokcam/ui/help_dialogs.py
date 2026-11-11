@@ -25,6 +25,11 @@ def collect_groups() -> list[ParamGroup]:
     """Todos os grupos conhecidos (força o registro dos módulos de CAM e pós)."""
     backend.operations()
     backend.grbl_post_group()
+    try:
+        import importlib
+        importlib.import_module("brokcam.gcode.importer")     # registra o grupo "Importar G-code"
+    except Exception:  # noqa: BLE001
+        pass
     groups = list(all_groups())
     from .machine_panel import PROBE_GROUP
     if PROBE_GROUP.key not in {g.key for g in groups}:
@@ -38,14 +43,14 @@ def _css() -> str:
     body {{ color: {p.text}; background: {p.surface}; }}
     h1 {{ font-size: 18pt; margin: 0 0 4px 0; }}
     h2 {{ font-size: 14pt; margin: 22px 0 4px 0; color: {p.text}; }}
-    h3 {{ font-size: 11pt; margin: 14px 0 2px 0; color: {p.accent}; }}
+    h3 {{ font-size: 11pt; margin: 14px 0 2px 0; color: {p.accent_fg}; }}
     p {{ margin: 2px 0 6px 0; line-height: 140%; }}
     .muted {{ color: {p.text_muted}; }}
     .meta {{ color: {p.text_muted}; font-size: 9pt; }}
     .adv {{ color: {p.warning}; font-size: 8.5pt; font-weight: 600; }}
     kbd {{ background: {p.surface_alt}; border: 1px solid {p.border_strong}; padding: 1px 5px; }}
     td {{ padding: 4px 10px 4px 0; vertical-align: top; }}
-    a {{ color: {p.accent}; text-decoration: none; }}
+    a {{ color: {p.accent_fg}; text-decoration: none; }}
     """
 
 
@@ -187,7 +192,7 @@ Cadastre suas fresas e brocas em <b>Biblioteca de ferramentas</b> (<kbd>Ctrl+T</
 também a ferramenta escolhida.</p>
 <ul>
 <li><b>Isolamento</b> no cobre: contorna as trilhas com a fresa (V-bit), separando-as eletricamente.</li>
-<li><b>Furação</b> na camada de furos: um ciclo por furo, agrupado por diâmetro de broca. Cada diâmetro tem uma cor (tabela <i>Diâmetros de furo</i> no inspetor); para um G-code por broca use o botão <i>Gerar um G-code por broca</i> logo abaixo da tabela (ou <i>Programas gerados → Um trabalho separado por broca</i>), ou selecione uma linha e use <i>Gerar só este diâmetro</i>. Se a <i>Associação de diâmetros</i> trocar o diâmetro (agrupar / brocas disponíveis), a coluna <i>Broca</i> da tabela mostra qual broca será usada. Para gravar vários G-codes de uma vez, use <i>Arquivo → Salvar G-codes de vários caminhos…</i> (Ctrl+Shift+E): um .nc por caminho, com nome seguro para cartão SD (ex.: <code>Furacao_0-4mm_T1_6_furos.nc</code>).</li>
+<li><b>Furação</b> na camada de furos: um ciclo por furo, agrupado por diâmetro de broca. Cada diâmetro tem uma cor (tabela <i>Diâmetros de furo</i> no inspetor); para um G-code por broca use o botão <i>Gerar um G-code por broca</i> logo abaixo da tabela (ou <i>Programas gerados → Um trabalho separado por broca</i>), ou selecione uma linha e use <i>Gerar só este diâmetro</i>. Se a <i>Associação de diâmetros</i> trocar o diâmetro (agrupar / brocas disponíveis), a coluna <i>Broca</i> da tabela mostra qual broca será usada. Para escolher você mesmo a broca de cada diâmetro (como no FlatCAM), selecione várias linhas com Ctrl/Shift+clique e use <i>Atribuir broca aos selecionados</i> — ex.: 0,79, 0,81 e 0,85 → broca 0,8; depois <i>Gerar caminho</i> faz tudo num só G-code, com uma troca por broca. Para gravar vários G-codes de uma vez, use <i>Arquivo → Salvar G-codes de vários caminhos…</i> (Ctrl+Shift+E): um .nc por caminho, com nome seguro para cartão SD (ex.: <code>Furacao_0-4mm_T1_6_furos.nc</code>).</li>
 <li><b>Recorte</b> no contorno: separa a placa do material com pontes (tabs) para ela não se soltar.</li>
 <li><b>Limpeza de cobre (NCC)</b>, opcional: remove o cobre que não faz parte do circuito.</li>
 </ul>
@@ -210,7 +215,8 @@ Em seguida <b>Iniciar</b>. Pausar faz um <i>feed hold</i> seguro; Parar interrom
 """
 
 SHORTCUTS: list[tuple[str, str, str]] = [
-    ("Arquivo", "Ctrl+O", "Abrir arquivos Gerber/Excellon/projeto"),
+    ("Arquivo", "Ctrl+O", "Abrir arquivos Gerber/Excellon/projeto (G-code abre como caminho editável)"),
+    ("Arquivo", "Ctrl+Shift+O", "Importar G-code como caminhos editáveis + geometria"),
     ("Arquivo", "Ctrl+S", "Salvar projeto"),
     ("Arquivo", "Ctrl+Shift+S", "Salvar projeto como"),
     ("Arquivo", "Ctrl+E", "Exportar G-code"),

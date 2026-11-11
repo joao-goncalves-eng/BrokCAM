@@ -4,8 +4,10 @@ Gera uma operação por broca (ordenada por diâmetro), com os furos já ordenad
 minimizar o deslocamento. Opções:
 
 * seleção das ferramentas do arquivo a usar;
-* mapeamento de diâmetros: exato, agrupar diâmetros próximos (tolerância) ou
-  associar à broca disponível mais adequada de uma lista;
+* mapeamento de diâmetros: exato, agrupar diâmetros próximos (tolerância),
+  associar à broca disponível mais adequada de uma lista ou ESCOLHER À MÃO a broca de
+  cada diâmetro (``mapping='manual'`` + ``bit_map``, ex.: 0,79 / 0,81 / 0,85 → broca 0,8),
+  tudo num só programa com uma pausa de troca por broca;
 * fresar furos maiores que a broca (círculo com fresa de topo, multiprofundidade);
 * slots (furos oblongos) fresados, furados em sequência ou ignorados;
 * furação em bicadas (peck, ``CutParams.multi_depth`` + ``depth_per_pass``);
@@ -16,6 +18,7 @@ minimizar o deslocamento. Opções:
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -80,14 +83,18 @@ DRILLING = register(ParamGroup(
             "mapping", "Associação de diâmetros", "choice", "exact",
             choices=(("exact", "Exata (uma broca por diâmetro)"),
                      ("group", "Agrupar diâmetros próximos"),
-                     ("library", "Brocas disponíveis")),
+                     ("library", "Brocas disponíveis"),
+                     ("manual", "Escolher a broca de cada diâmetro")),
             help=(
                 "Exata: cada diâmetro do arquivo vira uma broca (podem ser muitas trocas, "
                 "ex.: 0,79 / 0,8 / 0,81 mm). Agrupar: diâmetros que diferem menos que a "
                 "tolerância usam a mesma broca (a maior do grupo, para o furo não sair "
                 "apertado). Brocas disponíveis: cada furo é associado à broca mais "
                 "adequada da sua lista de brocas reais — o modo mais prático para quem tem "
-                "um jogo limitado de brocas.")),
+                "um jogo limitado de brocas. Escolher a broca de cada diâmetro: você decide, na "
+                "tabela 'Diâmetros de furo' (selecione várias linhas e use 'Atribuir broca'), "
+                "qual broca faz cada diâmetro — ex.: 0,79, 0,81 e 0,85 com a broca de 0,8 e "
+                "1,0 e 1,1 com a de 1,0. Tudo sai num só G-code, com uma troca por broca.")),
         ParamSpec(
             "group_tol", "Tolerância de agrupamento", "float", 0.05, unit="mm", minimum=0.0,
             maximum=2.0, step=0.01, decimals=3,
@@ -100,6 +107,15 @@ DRILLING = register(ParamGroup(
             help=(
                 "Lista das brocas que você possui, separadas por vírgula. Usada no modo "
                 "'Brocas disponíveis'.")),
+        ParamSpec(
+            "bit_map", "Broca de cada diâmetro", "str", "",
+            help=(
+                "Associação escolhida à mão (modo 'Escolher a broca de cada diâmetro'), no "
+                "formato 'furo=broca' separado por ponto e vírgula, em mm: ex. "
+                "'0,79=0,8; 0,81=0,8; 1,02=1,0; 3,2=fresa'. 'fresa' = fresar esse furo com a "
+                "fresa de topo. Normalmente é preenchido pelo botão 'Atribuir broca' da tabela "
+                "de diâmetros — não precisa digitar. Diâmetros que não aparecem aqui usam a "
+                "broca da lista 'Brocas disponíveis' escolhida pela regra abaixo.")),
         ParamSpec(
             "library_rule", "Regra de escolha da broca", "choice", "nearest",
             choices=(("nearest", "Mais próxima"), ("larger", "Igual ou maior"),
@@ -250,6 +266,61 @@ def _choose_bit(dia: float, bits: np.ndarray, rule: str) -> float:
     return float(bits[np.argmin(np.abs(bits - dia))])
 
 
+MILL = "fresa"          # valor especial do ``bit_map``: fresar o furo com a fresa de topo
+_MAP_TOL = 1e-3          # diâmetros do ``bit_map`` casam com os do arquivo dentro desta tolerância
+
+
+def _num(tok: str) -> float:
+    return float(tok.strip().replace(",", "."))
+
+
+def parse_bit_map(text: str) -> dict[float, float | str]:
+    """Lê o ``bit_map`` ('0,79=0,8; 1,02=1,0; 3,2=fresa') → ``{Ø furo: Ø broca | "fresa"}``.
+
+    Aceita ``;`` ou quebra de linha entre pares, ``=`` ou ``:`` ou ``->`` entre furo e broca,
+    vírgula ou ponto decimal. Pares inválidos são ignorados (o resto continua valendo).
+    """
+    out: dict[float, float | str] = {}
+    for part in re.split(r"[;\n]+", str(text or "")):
+        part = part.strip()
+        if not part:
+            continue
+        m = re.match(r"^\s*([0-9.,]+)\s*(?:=|:|->|→)\s*(\S+)\s*$", part)
+        if not m:
+            continue
+        try:
+            hole = round(_num(m.group(1)), 4)
+        except ValueError:
+            continue
+        val = m.group(2).strip().lower()
+        if val in (MILL, "mill", "f"):
+            out[hole] = MILL
+            continue
+        try:
+            bit = _num(val)
+        except ValueError:
+            continue
+        if bit > 0:
+            out[hole] = round(bit, 4)
+    return out
+
+
+def format_bit_map(mapping: dict[float, float | str]) -> str:
+    """Inverso de :func:`parse_bit_map` (ordem crescente de furo, vírgula decimal)."""
+    parts = []
+    for hole in sorted(mapping):
+        v = mapping[hole]
+        parts.append(f"{fmt_mm(hole)}={v if v == MILL else fmt_mm(float(v))}")
+    return "; ".join(parts)
+
+
+def _lookup(mapping: dict[float, float | str], dia: float) -> float | str | None:
+    for hole, v in mapping.items():
+        if abs(hole - dia) <= _MAP_TOL:
+            return v
+    return None
+
+
 def _circle(cx: float, cy: float, radius: float, n: int, ccw: bool) -> np.ndarray:
     t = np.linspace(0.0, 2 * math.pi, n + 1)
     if not ccw:
@@ -308,6 +379,9 @@ def _plan(layer: DrillLayer, s: dict[str, Any]) -> _Plan:
     milled_holes: list[tuple[float, np.ndarray]] = []
     milled_slots: list[tuple[float, np.ndarray]] = []
     milled_sources: set[int] = set()
+    bit_of: dict[int, float] = {}
+    auto_ids: set[int] = set()        # modo manual: diâmetros sem escolha (seguem a regra da lista)
+    forced_mill: set[int] = set()     # modo manual: diâmetros marcados como "fresa"
 
     if s["mapping"] == "group":
         # agrupa considerando a camada INTEIRA (não só ``tool_select``): furar só o T1 dá a
@@ -324,6 +398,19 @@ def _plan(layer: DrillLayer, s: dict[str, Any]) -> _Plan:
         if not len(bits):
             warnings.append("Lista de brocas disponíveis vazia; usando diâmetros exatos.")
         bit_of = {id(t): _choose_bit(t.diameter, bits, s["library_rule"]) for t in tools}
+    elif s["mapping"] == "manual":
+        # escolhido à mão por diâmetro; o que não foi escolhido segue a regra da lista
+        manual = parse_bit_map(s["bit_map"])
+        for t in tools:
+            v = _lookup(manual, t.diameter)
+            if v is None:
+                bit_of[id(t)] = _choose_bit(t.diameter, bits, s["library_rule"])
+                auto_ids.add(id(t))
+            elif v == MILL:
+                bit_of[id(t)] = round(t.diameter, 4)
+                forced_mill.add(id(t))
+            else:
+                bit_of[id(t)] = float(v)
     else:
         bit_of = {id(t): round(t.diameter, 4) for t in tools}
 
@@ -331,8 +418,10 @@ def _plan(layer: DrillLayer, s: dict[str, Any]) -> _Plan:
         bit = bit_of[id(t)]
         pts = np.asarray(t.points, dtype=float).reshape(-1, 2)
         slots = np.asarray(t.slots, dtype=float).reshape(-1, 4)
-        too_small_bit = s["mapping"] == "library" and t.diameter - bit > float(s["mill_threshold"])
-        mill_it = mill_large and (t.diameter >= mill_min or too_small_bit)
+        chosen = s["mapping"] == "manual" and id(t) not in auto_ids     # escolhido à mão: respeitar
+        too_small_bit = ((s["mapping"] == "library" or (s["mapping"] == "manual" and not chosen))
+                         and t.diameter - bit > float(s["mill_threshold"]))
+        mill_it = id(t) in forced_mill or (mill_large and not chosen and (t.diameter >= mill_min or too_small_bit))
         if mill_it and t.diameter <= mill_dia + 1e-6:
             warnings.append(f"T{t.number} (Ø{t.diameter:g} mm) não pode ser fresado com fresa de "
                             f"{mill_dia:g} mm; será furado com broca de {bit:g} mm.")

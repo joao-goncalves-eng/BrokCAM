@@ -7,14 +7,15 @@
 from __future__ import annotations
 
 import html
+import os
 from typing import Any
 
 import numpy as np
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QColorDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel,
-    QProgressBar, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QToolButton,
+    QAbstractItemView, QColorDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QMenu, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QTableWidget, QTableWidgetItem, QToolButton,
     QVBoxLayout, QWidget,
 )
 
@@ -135,8 +136,9 @@ class DrillTable(QTableWidget):
     rankSelected = Signal(object)          # rank (int) ou None
 
     def __init__(self, rows: list[dict[str, Any]], dia_header: str = "Ø furo",
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, multi: bool = False) -> None:
         super().__init__(len(rows), 5, parent)
+        self.multi = multi
         self.rows = rows
         self.setHorizontalHeaderLabels(["", f"{dia_header} ({units.unit_label()})", "Arquivo", "Furos",
                                         f"Broca ({units.unit_label()})"])
@@ -144,14 +146,16 @@ class DrillTable(QTableWidget):
         self.verticalHeader().hide()
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection if multi
+                              else QAbstractItemView.SelectionMode.SingleSelection)
         self.setShowGrid(False)
         self.setAlternatingRowColors(True)
         self.setWordWrap(False)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setAccessibleName("Diâmetros de furo")
         self.setAccessibleDescription("Uma linha por diâmetro, com a mesma cor usada no canvas. Selecione uma "
-                                      "linha para destacar esses furos no canvas.")
+                                      "linha para destacar esses furos no canvas"
+                                      + (" (Ctrl/Shift+clique seleciona várias)." if multi else "."))
         pal = theme.palette()
         for i, r in enumerate(rows):
             col = QColor(theme.drill_color(r["rank"], pal))
@@ -193,12 +197,15 @@ class DrillTable(QTableWidget):
         self.setFixedHeight(min(h, 300))
         self.itemSelectionChanged.connect(self._sel)
 
-    def set_bits(self, bits: list[tuple[float, bool] | None] | None) -> None:
+    def set_bits(self, bits: list[tuple[float, bool] | None] | None, always: bool = False,
+                 manual: set[float] | None = None) -> None:
         """Mostra a coluna "Broca" (Ø que a associação de diâmetros vai usar em cada linha).
 
         ``bits`` = um ``(Ø da broca, fresado?)`` por linha, ou ``None`` para esconder a coluna.
         Ela só aparece quando alguma linha NÃO será furada com o próprio diâmetro — assim o
-        usuário vê, antes de gerar, que "Ø0,4" vai sair com a broca de 0,8 mm.
+        usuário vê, antes de gerar, que "Ø0,4" vai sair com a broca de 0,8 mm — ou sempre
+        (``always``), no modo "Escolher a broca de cada diâmetro". ``manual`` = diâmetros cuja
+        broca foi escolhida à mão (marcados com ✎; os demais seguem a regra automática).
         """
         changed = False
         for i, r in enumerate(self.rows):
@@ -211,14 +218,20 @@ class DrillTable(QTableWidget):
             dia, milled = b
             same = not milled and abs(float(dia) - float(r["dia"])) < 1e-6
             changed |= not same
-            it.setText(("fresa " if milled else "") + _fmt_dia(dia) + ("" if same else " ⚠"))
+            by_hand = manual is not None and any(abs(float(r["dia"]) - m) < 1e-3 for m in manual)
+            mark = " ✎" if by_hand else ("" if same else " ⚠")
+            it.setText(("fresa " if milled else "") + _fmt_dia(dia) + mark)
             tip = (f"Com a associação de diâmetros atual, os furos de Ø {_fmt_dia(r['dia'])} "
                    + (f"serão fresados com a fresa de {_fmt_dia(dia)}" if milled
                       else f"serão feitos com a broca de {_fmt_dia(dia)}") + f" {units.unit_label()}.")
             it.setToolTip(tip)
+            if by_hand:
+                tip += " Escolhida por você (Atribuir broca)."
+            it.setToolTip(tip)
             it.setData(Qt.ItemDataRole.AccessibleTextRole,
-                       ("fresa " if milled else "broca ") + _fmt_dia(dia) + ("" if same else ", diferente do furo"))
-        self.setColumnHidden(4, not changed)
+                       ("fresa " if milled else "broca ") + _fmt_dia(dia)
+                       + (", escolhida à mão" if by_hand else ("" if same else ", diferente do furo")))
+        self.setColumnHidden(4, not (changed or always))
 
     def bit_of(self, row: dict[str, Any]) -> tuple[float, bool] | None:
         b = row.get("bit")
@@ -228,7 +241,16 @@ class DrillTable(QTableWidget):
         r = self.currentRow()
         return self.rows[r] if 0 <= r < len(self.rows) and self.selectionModel().hasSelection() else None
 
+    def selected_rows(self) -> list[dict[str, Any]]:
+        """Linhas selecionadas, na ordem da tabela (várias no modo ``multi``)."""
+        idx = sorted({i.row() for i in self.selectionModel().selectedRows()})
+        return [self.rows[i] for i in idx if 0 <= i < len(self.rows)]
+
     def _sel(self) -> None:
+        sel = self.selected_rows()
+        if self.multi and len(sel) > 1:
+            self.rankSelected.emit([r["rank"] for r in sel])
+            return
         r = self.current_row()
         self.rankSelected.emit(r["rank"] if r else None)
 
@@ -251,7 +273,9 @@ class OperationPanel(QWidget):
     batchRequested = Signal(str, list)               # ação em lote, [(tipo, id)]
     gcodeAction = Signal(str, str, int)              # ação ("preview","save","send","remove"), tipo, id
     generateOnceRequested = Signal(int, str, dict)   # como generateRequested, sem salvar como padrão
-    drillHighlight = Signal(int, object)             # chave do item no canvas, rank do diâmetro (ou None)
+    drillHighlight = Signal(int, object)             # chave do item no canvas, rank(s) do diâmetro (ou None)
+    statusMessage = Signal(str, int)                 # texto, duração (ms) na barra de status
+    editOpsRequested = Signal(int, object, str)      # job_id, nova lista de PathOp, texto do desfazer
 
     def __init__(self, settings: AppSettings, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -327,6 +351,8 @@ class OperationPanel(QWidget):
         self.drill_table = None
         self.drill_only_btn = None
         self.drill_all_btn = None
+        self.drill_assign_btn = None
+        self.imported_table = None
         self._refresh_drill_bits = None
         self.drillHighlight.emit(-1, None)
         body = QWidget()
@@ -405,7 +431,7 @@ class OperationPanel(QWidget):
         self.help.set_default("Propriedades", "Aqui aparecem as opções do item selecionado. Toda opção "
                               "tem explicação: passe o mouse ou dê foco a um campo para lê-la neste quadro.")
         self.primary.setText("Abrir arquivos…")
-        self.primary.setIcon(icon("open"))
+        self.primary.setIcon(icon("open", "accent_text"))
         self.primary.setEnabled(True)
         self.primary.setAccessibleName("Abrir arquivos")
 
@@ -873,8 +899,9 @@ class OperationPanel(QWidget):
         self.op_combo = None
         lay = self._new_body()
         ops = backend.operations()
-        op_title = ops[j.job.operation].title if j.job.operation in ops else (j.job.operation or "Caminho")
-        self._header(lay, OP_ICONS.get(j.job.operation, "job"),
+        op_title = ops[j.job.operation].title if j.job.operation in ops else (
+            "G-code importado" if j.job.operation == "gcode_import" else (j.job.operation or "Caminho"))
+        self._header(lay, OP_ICONS.get(j.job.operation, "import" if j.job.operation == "gcode_import" else "job"),
                      j.color or theme.palette().cut, j.name, f"Caminho de ferramenta · {op_title}")
 
         st = j.job.stats()
@@ -904,11 +931,25 @@ class OperationPanel(QWidget):
         tl = QLabel(f"<span style='color:{theme.palette().text_muted}'>Ferramenta:</span> {html.escape(tools or '—')}")
         tl.setWordWrap(True)
         lay.addWidget(tl)
-        if j.job.settings.get("edited"):
+        if j.job.settings.get("imported"):
+            src = os.path.basename(str(j.job.settings.get("source_file") or "")) or "arquivo"
+            im = QLabel(f"⭳ Importado de <b>{html.escape(src)}</b>. "
+                        + ("Sem edições: o G-code é o original do arquivo." if j.job.gcode and not
+                           j.job.settings.get("regenerated") else
+                           "Os caminhos ficam salvos no projeto; o G-code é gerado pelo pós-processador."))
+            im.setObjectName("Muted")
+            im.setWordWrap(True)
+            lay.addWidget(im)
+        elif j.job.settings.get("edited"):
             ed = QLabel("✎ Editado manualmente — a edição fica salva no projeto")
             ed.setStyleSheet(f"color: {theme.palette().warning};")
             ed.setWordWrap(True)
             lay.addWidget(ed)
+        for note in (j.job.settings.get("notes") or [])[:3]:
+            nl = QLabel("ⓘ " + html.escape(str(note)))
+            nl.setObjectName("Muted")
+            nl.setWordWrap(True)
+            lay.addWidget(nl)
         for w in (j.job.settings.get("warnings") or [])[:4]:
             wl = QLabel("⚠ " + html.escape(str(w)))
             wl.setWordWrap(True)
@@ -916,6 +957,8 @@ class OperationPanel(QWidget):
             lay.addWidget(wl)
         if j.job.operation == "drilling":
             self._add_job_drill_table(lay, j)
+        if j.job.settings.get("imported"):
+            self._add_imported_params(lay, j)
 
         acts = QGridLayout()
         acts.setSpacing(6)
@@ -1003,38 +1046,61 @@ class OperationPanel(QWidget):
         v = QVBoxLayout(w)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(6)
-        table = DrillTable(rows, "Ø furo")
+        table = DrillTable(rows, "Ø furo", multi=True)
         table.rankSelected.connect(lambda rk: self.drillHighlight.emit(e.id, rk))
         v.addWidget(table)
         # Decisão (QA): "Gerar só este diâmetro" gera os furos do diâmetro escolhido com a broca
         # que a associação ATUAL escolheria (a mesma do programa completo — sem resultado
         # diferente entre um caminho e outro). Quando essa broca difere do furo, a coluna
         # "Broca" da tabela mostra isso (⚠) e o rótulo do botão passa a citar a broca.
+        # "Atribuir broca" (fluxo do FlatCAM: vários diâmetros → uma broca real) liga o modo
+        # "Escolher a broca de cada diâmetro" e grava a escolha em ``bit_map``; o botão
+        # principal "Gerar caminho" faz então UM programa, com uma troca por broca.
         brow = QVBoxLayout()            # empilhados: lado a lado não cabem no inspetor estreito
         brow.setSpacing(6)
+        assign = QPushButton("Atribuir broca aos selecionados")
+        assign.setIcon(icon("drill"))
+        assign.setEnabled(False)
+        assign.setToolTip("Escolhe a broca real que vai fazer os diâmetros selecionados (Ctrl/Shift+clique "
+                          "seleciona vários). Ex.: 0,79, 0,81 e 0,85 → broca de 0,8. Tudo sai num só G-code, "
+                          "com uma troca por broca.")
+        assign.setAccessibleName("Atribuir broca aos diâmetros selecionados")
+        menu = QMenu(assign)
+        assign.setMenu(menu)
         btn = QPushButton("Gerar só este diâmetro")
         btn.setIcon(icon("drill"))
         btn.setEnabled(False)
-        btn.setToolTip("Gera um caminho de furação apenas com os furos do diâmetro selecionado na tabela "
-                       "(as demais opções de Furação são as do formulário abaixo)")
+        btn.setToolTip("Gera um caminho de furação (um só G-code) apenas com os furos dos diâmetros "
+                       "selecionados na tabela (as demais opções de Furação são as do formulário abaixo)")
         btn.setAccessibleName("Gerar furação só do diâmetro selecionado")
         allb = QPushButton("Gerar um G-code por broca")
         allb.setIcon(icon("drill", "accent_text"))
         allb.setProperty("primary", True)
         allb.setToolTip("Cria de uma vez um caminho (com G-code próprio, sem pausas de troca) para cada broca, "
-                        "usando as opções de Furação abaixo. Ctrl+Z desfaz todos juntos.")
+                        "usando as opções de Furação abaixo. Ctrl+Z desfaz todos juntos. Para tudo num só "
+                        "G-code, use o botão “Gerar caminho” no rodapé.")
         allb.setAccessibleName("Gerar um G-code por broca")
         allb.setEnabled(not self.busy)
-        for b in (allb, btn):
+        for b in (assign, btn, allb):
             b.setMinimumWidth(10)
             b.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             brow.addWidget(b)
         self.drill_only_btn = btn
         self.drill_all_btn = allb
+        self.drill_assign_btn = assign
 
         def sync_btn(_rk: Any = None) -> None:
-            r = table.current_row()
-            btn.setEnabled(r is not None and not self.busy)
+            sel = table.selected_rows()
+            r = sel[0] if len(sel) == 1 else None
+            btn.setEnabled(bool(sel) and not self.busy)
+            assign.setEnabled(bool(sel) and not self.busy)
+            if len(sel) > 1:
+                n_ = len(sel)
+                assign.setText(f"Atribuir broca aos {n_} diâmetros")
+                btn.setText(f"Gerar os {n_} diâmetros num G-code")
+                btn.setAccessibleName(f"Gerar furação só dos {n_} diâmetros selecionados, num só G-code")
+                return
+            assign.setText("Atribuir broca ao diâmetro" if r is not None else "Atribuir broca aos selecionados")
             b = table.bit_of(r) if r is not None else None
             if r is not None and b is not None and (b[1] or abs(b[0] - r["dia"]) > 1e-6):
                 tool = "fresa" if b[1] else "broca"
@@ -1045,15 +1111,54 @@ class OperationPanel(QWidget):
                 btn.setText("Gerar só este diâmetro")
                 btn.setAccessibleName("Gerar furação só do diâmetro selecionado")
 
+        def refresh_bits() -> None:
+            vals = self._drill_values()
+            manual = vals.get("mapping") == "manual"
+            hand: set[float] | None = None
+            if manual:
+                from brokcam.cam.drilling import parse_bit_map
+                hand = set(parse_bit_map(str(vals.get("bit_map", ""))))
+            table.set_bits(self._layer_bits(e, rows), always=manual, manual=hand)
+            sync_btn()
+
+        def fill_menu() -> None:
+            menu.clear()
+            from brokcam.cam.drilling import _parse_numbers
+            vals = self._drill_values()
+            bits = sorted({round(b, 4) for b in _parse_numbers(str(vals.get("available_drills", ""))) if b > 0})
+            sel = table.selected_rows()
+            hdr = menu.addAction(f"Broca para Ø {', '.join(_fmt_dia(r['dia']) for r in sel)}")
+            hdr.setEnabled(False)
+            for bdia in bits:
+                a = menu.addAction(icon("drill"), f"Broca {_fmt_dia(bdia)} {units.unit_label()}")
+                a.triggered.connect(lambda _c=False, bd=bdia: self._assign_bits(e, table, bd))
+            menu.addSeparator()
+            other = menu.addAction("Outro diâmetro de broca…")
+            other.triggered.connect(lambda: self._assign_other(e, table))
+            if len(sel) == 1:
+                same = menu.addAction(f"O próprio diâmetro ({_fmt_dia(sel[0]['dia'])})")
+                same.triggered.connect(lambda: self._assign_bits(e, table, float(sel[0]["dia"])))
+            mill = menu.addAction(icon("ncc"), "Fresar com a fresa de topo")
+            mill.setToolTip("Os furos são fresados em círculo com a fresa de topo de 'Fresa para furos'.")
+            mill.triggered.connect(lambda: self._assign_bits(e, table, "fresa"))
+            menu.addSeparator()
+            auto = menu.addAction("Automático (regra da lista de brocas)")
+            auto.triggered.connect(lambda: self._assign_bits(e, table, None))
+            if vals.get("mapping") == "manual":
+                menu.addSeparator()
+                clr = menu.addAction(icon("reset"), "Limpar todas as escolhas")
+                clr.triggered.connect(lambda: self._assign_bits(e, table, None, all_rows=True))
+
+        menu.aboutToShow.connect(fill_menu)
         table.rankSelected.connect(sync_btn)
-        self._refresh_drill_bits = lambda: (table.set_bits(self._layer_bits(e, rows)), sync_btn())
+        self._refresh_drill_bits = refresh_bits
 
         def gen() -> None:
-            r = table.current_row()
-            if r is None:
+            sel = table.selected_rows()
+            if not sel:
                 return
             vals = self._drill_values()
-            vals.update({"tool_select": ", ".join(f"T{n}" for n in r["sources"]),
+            vals.update({"tool_select": ", ".join(f"T{n}" for r in sel for n in r["sources"]),
                          "split_jobs": "single", "bit_filter": 0.0})
             self.generateOnceRequested.emit(e.id, "drilling", vals)
 
@@ -1065,8 +1170,9 @@ class OperationPanel(QWidget):
         btn.clicked.connect(gen)
         allb.clicked.connect(gen_all)
         v.addLayout(brow)
-        hint = QLabel("Cada cor é um diâmetro, igual no canvas. Selecione uma linha para destacar esses furos. "
-                      "<b>Gerar um G-code por broca</b> cria um caminho para cada broca de uma vez.")
+        hint = QLabel("Cada cor é um diâmetro, igual no canvas. Selecione um ou vários (Ctrl/Shift+clique) e use "
+                      "<b>Atribuir broca</b> para escolher a broca real de cada um; <b>Gerar caminho</b> (rodapé) "
+                      "faz tudo num só G-code, com uma troca por broca.")
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
         v.addWidget(hint)
@@ -1074,6 +1180,68 @@ class OperationPanel(QWidget):
         n = sum(r["holes"] for r in rows)
         lay.addWidget(self._collapsible("Diâmetros de furo", w, "section_layer_drills", True,
                                         f"{len(rows)} diâmetro{'s' if len(rows) != 1 else ''} · {n} furos"))
+
+    def _assign_other(self, e: LayerEntry, table: "DrillTable") -> None:
+        sel = table.selected_rows()
+        if not sel:
+            return
+        ul = units.unit_label()
+        val, ok = QInputDialog.getDouble(self, "Atribuir broca",
+                                         f"Diâmetro da broca ({ul}) para Ø "
+                                         f"{', '.join(_fmt_dia(r['dia']) for r in sel)}:",
+                                         units.to_display(float(sel[0]["dia"])), 0.01, 1000.0, 3)
+        if ok and val > 0:
+            self._assign_bits(e, table, round(units.from_display(val), 4))
+
+    def _assign_bits(self, e: LayerEntry, table: "DrillTable", value: float | str | None,
+                     all_rows: bool = False) -> None:
+        """Grava a broca escolhida (Ø, ``"fresa"`` ou ``None`` = automático) para as linhas
+        selecionadas e liga o modo "Escolher a broca de cada diâmetro".
+
+        Ao sair de outro modo, as linhas não selecionadas são fixadas com a broca que já tinham
+        (a tabela não muda de surpresa). Vale no formulário aberto e nas preferências salvas.
+        """
+        import numpy as np_
+        from brokcam.cam.drilling import DRILLING, MILL, _choose_bit, _parse_numbers, format_bit_map, parse_bit_map
+        vals = self._drill_values()
+        if vals.get("mapping") == "manual":
+            m = parse_bit_map(str(vals.get("bit_map", "")))
+        else:
+            # fixa só as linhas cuja broca MUDARIA no modo manual (sem escolha, elas seguem a regra
+            # da lista): nada muda de surpresa e só o que foi realmente escolhido fica marcado ✎
+            bits = np_.array(sorted(_parse_numbers(str(vals.get("available_drills", "")))), dtype=float)
+            rule = str(vals.get("library_rule", "nearest"))
+            m = {}
+            for r in table.rows:
+                b = table.bit_of(r)
+                if b is None:
+                    continue
+                auto = _choose_bit(float(r["dia"]), bits, rule)
+                if b[1] or abs(float(b[0]) - auto) > 1e-6:
+                    m[round(float(r["dia"]), 4)] = MILL if b[1] else round(float(b[0]), 4)
+        targets = table.rows if all_rows else table.selected_rows()
+        for r in targets:
+            key = round(float(r["dia"]), 4)
+            for k in [k for k in m if abs(k - key) < 1e-3]:
+                del m[k]
+            if value is not None:
+                m[key] = value if value == MILL else round(float(value), 4)
+        new = {"mapping": "manual", "bit_map": format_bit_map(m)}
+        if self.form is not None and self.op_key == "drilling":
+            for k, val in new.items():
+                if k in self.form.rows:
+                    self.form.rows[k].set_value(val)
+            self.form._emit_changed()           # lembra + atualiza a tabela (valuesChanged)
+        else:
+            cur = dict(self.settings.group_values(DRILLING))
+            cur.update(new)
+            self.settings.set_group_values(DRILLING, cur)
+        if self._refresh_drill_bits is not None:
+            self._refresh_drill_bits()
+        names = ", ".join(_fmt_dia(r["dia"]) for r in targets)
+        what = ("automática" if value is None else "fresa de topo" if value == MILL
+                else f"broca {_fmt_dia(float(value))} {units.unit_label()}")
+        self.statusMessage.emit(f"Ø {names}: {what}. “Gerar caminho” faz tudo num só G-code.", 5000)
 
     def _add_job_drill_table(self, lay: QVBoxLayout, j: JobEntry) -> None:
         rows = job_drill_rows(j.job)
@@ -1111,6 +1279,126 @@ class OperationPanel(QWidget):
         n = sum(r["holes"] for r in rows)
         lay.addWidget(self._collapsible("Brocas deste caminho", w, "section_job_drills", True,
                                         f"{len(rows)} broca{'s' if len(rows) != 1 else ''} · {n} furos"))
+
+    # ------------------------------------------------------------------ G-code importado
+    IMPORTED_COLS = (("dia", "Ø ferr."), ("cut_z", "Z corte"), ("travel_z", "Z desloc."),
+                     ("feed_xy", "Avanço XY"), ("feed_z", "Avanço Z"), ("rpm", "RPM / S"))
+
+    def _add_imported_params(self, lay: QVBoxLayout, j: JobEntry) -> None:
+        """Tabela editável das ferramentas/cortes de um G-code importado (uma linha por operação).
+
+        Mudar um valor substitui as operações por cópias alteradas (Ctrl+Z desfaz) e descarta o
+        texto original: o G-code passa a ser gerado pelo pós-processador com os valores novos.
+        """
+        ops = j.job.ops
+        if not ops:
+            return
+        ul = units.unit_label()
+        cols = self.IMPORTED_COLS
+        # transposta: uma COLUNA por operação (normalmente 1–3), uma linha por valor — cabe no
+        # inspetor estreito
+        table = QTableWidget(len(cols), len(ops))
+        table.setVerticalHeaderLabels([
+            f"{lab} ({ul}/min)" if key.startswith("feed") else (lab if key == "rpm" else f"{lab} ({ul})")
+            for key, lab in cols])
+        heads = []
+        for i, op in enumerate(ops):
+            kind = "Furos" if op.kind == "drill" else ("Laser" if op.params.laser_mode else "Fresa")
+            heads.append(f"{kind} T{op.tool.number}" + (f" ({i + 1})" if len(ops) > 1 else ""))
+        table.setHorizontalHeaderLabels(heads)
+        table.setAlternatingRowColors(True)
+        table.setShowGrid(False)
+        table.setWordWrap(False)
+        table.setAccessibleName("Ferramentas e cortes do G-code importado")
+        table.setAccessibleDescription("Uma coluna por operação e uma linha por valor. Edite um valor (duplo "
+                                       "clique) para mudar o diâmetro da ferramenta, as profundidades, os "
+                                       "avanços ou a rotação.")
+        table.setToolTip("Duplo clique num valor para editar. O G-code passa a ser gerado pelo pós-processador "
+                         "com os valores novos (Ctrl+Z desfaz).")
+
+        def fmt(v: float, dec: int = 3) -> str:
+            t = f"{v:.{dec}f}"
+            if "." in t:
+                t = t.rstrip("0").rstrip(".")
+            return t.replace(".", ",")
+
+        for c, op in enumerate(ops):
+            n = len(op.points) if op.kind == "drill" else len(op.paths)
+            hi = table.horizontalHeaderItem(c)
+            if hi is not None:
+                hi.setToolTip(f"{op.label or op.tool.name} · {n} {'furo(s)' if op.kind == 'drill' else 'caminho(s)'}")
+            p = op.params
+            vals = {"dia": units.to_display(op.tool.diameter), "cut_z": units.to_display(p.cut_z),
+                    "travel_z": units.to_display(p.travel_z), "feed_xy": units.to_display(p.feed_xy),
+                    "feed_z": units.to_display(p.feed_z),
+                    "rpm": p.laser_power if p.laser_mode else p.spindle_rpm}
+            for r, (key, _lab) in enumerate(cols):
+                cell = QTableWidgetItem(fmt(vals[key], 0 if key == "rpm" else (1 if key.startswith("feed") else 3)))
+                cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if p.laser_mode and key in ("cut_z", "travel_z", "feed_z"):
+                    cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    cell.setText("—")
+                table.setItem(r, c, cell)
+        hh = table.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch if len(ops) <= 3
+                                else QHeaderView.ResizeMode.ResizeToContents)
+        table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        table.resizeRowsToContents()
+        h = hh.height() + sum(table.rowHeight(i) for i in range(len(cols))) + 2 * table.frameWidth() + 4
+        if len(ops) > 3:
+            h += table.horizontalScrollBar().sizeHint().height()
+        table.setFixedHeight(h)
+        self.imported_table = table
+
+        def changed(item: QTableWidgetItem) -> None:
+            c, r = item.column(), item.row()
+            if c >= len(ops) or r >= len(cols):
+                return
+            key = cols[r][0]
+            try:
+                v = float(item.text().strip().replace(",", "."))
+            except ValueError:
+                self.refresh()
+                return
+            QTimer.singleShot(0, lambda: self._edit_imported_op(j, c, key, v))
+
+        table.itemChanged.connect(changed)
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(4)
+        v.addWidget(table)
+        hint = QLabel("Valores lidos do arquivo. Edite para gerar o G-code de novo com outra profundidade, "
+                      "avanço, rotação ou diâmetro de ferramenta.")
+        hint.setObjectName("Muted")
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+        lay.addWidget(self._collapsible("Ferramentas e cortes", w, "section_imported_params", True,
+                                        f"{len(ops)} operação{'ões' if len(ops) != 1 else ''}"))
+
+    def _edit_imported_op(self, j: JobEntry, row: int, key: str, value: float) -> None:
+        import copy
+        from dataclasses import replace as dc_replace
+        ops = [copy.copy(o) for o in j.job.ops]
+        op = ops[row]
+        p = op.params
+        if key == "dia":
+            if value <= 0:
+                self.refresh()
+                return
+            op.tool = dc_replace(op.tool, diameter=round(units.from_display(value), 4))
+        elif key == "rpm":
+            op.params = dc_replace(p, laser_power=value) if p.laser_mode else dc_replace(p, spindle_rpm=value)
+        else:
+            mm = units.from_display(value)
+            if key in ("feed_xy", "feed_z") and mm <= 0:
+                self.refresh()
+                return
+            op.params = dc_replace(p, **{key: mm})
+            if key == "cut_z" and p.multi_depth and p.depth_per_pass > abs(mm) > 0:
+                op.params = dc_replace(op.params, depth_per_pass=abs(mm))
+        label = dict(self.IMPORTED_COLS)[key]
+        self.editOpsRequested.emit(j.id, ops, f"Alterar {label.lower()} do caminho importado")
 
     # ------------------------------------------------------------------ rodapé
     def _set_primary(self, text: str, icon_name: str, enabled: bool) -> None:
