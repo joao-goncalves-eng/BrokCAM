@@ -39,10 +39,18 @@ fluxo do FlatCAM com outra proposta:
 - **Isolamento de trilhas** com fresa em V ou de topo, vários passes e aviso de curtos entre trilhas.
 - **Limpeza de cobre (NCC)**, **recorte com pontes**, **painelização** e **placas dupla face**.
 - **Furação por diâmetro:** cada diâmetro com cor própria e furo no tamanho real; tabela com
-  contagem por broca; um G-code por broca com um clique.
+  contagem por broca; um G-code por broca com um clique — ou **escolha a broca de cada
+  diâmetro** (vários diâmetros → uma broca real, como no FlatCAM) e gere tudo num só G-code,
+  com uma troca por broca.
+- **Abrir G-code como projeto:** arquivos `.nc`/`.gcode` (do BrokCAM, FlatCAM ou outro CAM) viram
+  caminhos editáveis + geometria — mova com a placa, edite caminhos, troque profundidade/avanço/
+  rotação e gere o G-code de novo.
 - **Biblioteca de ferramentas** e **presets** com os dados de corte que funcionam na sua máquina.
 - **Edição manual de caminhos**: excluir, apagar trecho, inverter sentido, reotimizar a ordem.
 - Desfazer/refazer em tudo que altera o projeto.
+- **Interface no estilo CAD** (Fusion 360 / Inventor): temas Claro, Escuro, Grafite, Azul-aço,
+  Meia-noite e Alto contraste, cor de destaque à escolha (inclusive personalizada), fundo em
+  degradê, ícones coloridos, cantos e densidade ajustáveis — tudo com contraste AA.
 
 ### Gerar
 - Pós-processador **GRBL 1.1** (fresadora, laser `$32=1`, sem troca de ferramenta) com offset Z.

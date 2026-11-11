@@ -7,7 +7,35 @@ usa [Versionamento Semântico](https://semver.org/lang/pt-BR/) — veja
 
 ## [Não lançado]
 
-_Nada ainda._
+### Adicionado
+- **Furação — escolher a broca de cada diâmetro** (fluxo do FlatCAM): nova *Associação de
+  diâmetros → Escolher a broca de cada diâmetro*. Na tabela *Diâmetros de furo* selecione vários
+  diâmetros (Ctrl/Shift+clique) e use *Atribuir broca aos selecionados* (brocas da lista, outro
+  diâmetro, o próprio diâmetro, fresar com a fresa de topo ou automático). *Gerar caminho* faz
+  tudo num só G-code, com uma pausa de troca por broca. A escolha fica em `bit_map`
+  (`0,79=0,8; 1,02=1; 3,2=fresa`), marcada com ✎ na coluna *Broca*; diâmetros sem escolha seguem
+  a regra da lista de brocas. *Gerar os N diâmetros num G-code* gera só os selecionados.
+- **Abrir G-code como caminhos editáveis** (*Arquivo → Importar G-code como caminhos…*,
+  Ctrl+Shift+O; também ao abrir/arrastar `.nc`): cada arquivo vira um caminho + uma camada de
+  geometria (vários arquivos = um grupo). Reconhece trocas de ferramenta, furos (inclusive em
+  bicadas e ciclos G81/G83), passadas repetidas (viram multiprofundidade), arcos, polegadas e
+  laser; lê Ø/formato da ferramenta dos comentários do BrokCAM/FlatCAM. Sem editar, o envio usa o
+  texto original; a tabela *Ferramentas e cortes* do inspetor muda Ø, Z, avanços e rotação
+  (Ctrl+Z desfaz) e o G-code passa a ser gerado pelo pós-processador. Salvo no `.bcam`.
+  Opções em *Preferências → Importar G-code*. O antigo "só visualizar/enviar" continua em
+  *Arquivo → Abrir G-code só para visualizar/enviar…* e no botão *Abrir…* do painel G-code.
+- **Interface estilo CAD (Fusion 360 / Inventor):** temas *Grafite*, *Azul-aço* e *Meia-noite*
+  além de Claro/Escuro (cinzas neutros redesenhados) e Alto contraste; **cor de destaque**
+  (11 cores ou personalizada, sempre ajustada para AA); **fundo em degradê** no canvas e na tela
+  inicial; **ícones coloridos**; **cantos** (suaves/arredondados/retos) e **densidade**
+  (confortável/compacta). Menu *Exibir → Aparência* e botão de aparência na faixa de comandos.
+- Seletor *Preparar/Máquina* no início da faixa (como o seletor de espaço do Fusion) e títulos
+  dos painéis em versalete.
+
+### Corrigido
+- Caixas de seleção dos formulários apareciam com uma borda de foco em volta do campo inteiro.
+- Ícones de botões principais (*Abrir arquivos…*, *Conectar*, *Iniciar*) sem a cor de texto do
+  botão.
 
 ## [0.3.0] — 2026-10-30
 

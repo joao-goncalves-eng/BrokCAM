@@ -19,7 +19,7 @@ Máquina real do dono: **MKS DLC32 (Grbl_Esp32, firmware 1.1h)**, porta **COM19*
 
 ```bash
 .venv/Scripts/python.exe run.py                 # app (ou duplo clique em BrokCAM.bat)
-.venv/Scripts/python.exe -m pytest -q           # suíte completa: ~284 testes, ~4–5 min
+.venv/Scripts/python.exe -m pytest -q           # suíte completa: ~350 testes, ~4–5 min
 .venv/Scripts/python.exe -m pytest -q tests/test_cam.py   # um arquivo
 .venv/Scripts/python.exe -m pyflakes brokcam    # lint rápido (instalado no venv)
 ```
@@ -46,7 +46,7 @@ Dependências só descem: `ui → machine/gcode/cam → parsers → core`. **Som
 | `core/` | `model.py`, `params.py`, `serialize.py` | Dataclasses compartilhadas (`GerberLayer`, `DrillLayer`, `GeometryLayer`, `Tool`, `CutParams`, `PathOp`, `Job`); sistema de opções explicadas; JSON de jobs/camadas |
 | `parsers/` | `gerber.py`, `excellon.py`, `detect.py` | RS-274X/X2 e Excellon vetorizados (shapely 2); `load_file`, `guess_role` |
 | `cam/` | `isolation.py`, `ncc.py`, `cutout.py`, `drilling.py`, `panelize.py`, `optimize.py`, `operations.py`, `common.py`, `tools.py`, `library.py`, `edit.py` | Operações puras `func(layer, settings, progress=None, cancel=None) -> Job`; registro `OPERATIONS`; biblioteca de ferramentas; edição manual de caminhos |
-| `gcode/` | `grbl.py`, `preview.py`, `autolevel.py` | Pós-processador GRBL (`GRBL_POST`, `generate_gcode/generate_program`), parser para preview/tempo, heightmap |
+| `gcode/` | `grbl.py`, `preview.py`, `autolevel.py`, `importer.py` | Pós-processador GRBL (`GRBL_POST`, `generate_gcode/generate_program`), parser para preview/tempo, heightmap, importação de G-code → `Job` + `GeometryLayer` (`GCODE_IMPORT`) |
 | `machine/` | `grbl.py`, `transport.py`, `simulator.py`, `grbl_codes.py`, `firmware.py` | Controlador GRBL em Python puro (threads + callbacks), serial/TCP, simulador, textos de erro/alarme/`$$`, catálogo Grbl_Esp32/DLC32 |
 | `ui/` | ver abaixo | PySide6 |
 
@@ -62,7 +62,7 @@ UI (`brokcam/ui/`):
 - `param_form.py` — formulário automático a partir de `ParamGroup`, ajuda contextual, presets.
 - `machine_panel.py` (`MachinePanel`, `GrblBridge`), `machine_tools.py` (posição/offset Z, sonda, heightmap, fins de curso, macros), `machine_config.py` (`$$` e config DLC32).
 - Diálogos: `align_dialog.py`, `double_sided.py`, `tool_library.py`, `preferences.py`, `help_dialogs.py`, `wizard.py`, `welcome.py`.
-- `theme.py` (paletas escuro/claro/alto contraste + QSS), `icons.py` + `icons/*.svg` (ícones próprios, recoloridos pelo tema), `backend.py` (fachada para os módulos não-UI), `workers.py` (`QThreadPool`), `settings.py` (`%APPDATA%\BrokCAM`).
+- `theme.py` (bases `BASES` escuro/claro/grafite/azul-aço/meia-noite + alto contraste, cor de destaque `ACCENTS` → `derive_palette` com ajuste AA automático, `Style` (degradê, cantos, densidade, ícones coloridos `ICON_TINTS`) e QSS), `icons.py` + `icons/*.svg` (ícones próprios, recoloridos pelo tema), `backend.py` (fachada para os módulos não-UI), `workers.py` (`QThreadPool`), `settings.py` (`%APPDATA%\BrokCAM`).
 
 `_reference/` = FlatCAM decompilado, **só consulta** (não importe, não copie a arquitetura).
 
@@ -125,6 +125,25 @@ UI (`brokcam/ui/`):
   devolve essa broca por T e alimenta a coluna *Broca* da tabela (só visível quando difere do furo).
   Nomes de job repetidos ganham " (2)" (`MainWindow._unique_job_name`). O comentário do G-code é
   `(Op Tn da maquina … : Furos broca Ø… - arquivo Tm)`.
+- **Furação — broca escolhida à mão** (`mapping="manual"`): `bit_map` = `"0,79=0,8; 1,02=1; 3,2=fresa"`
+  (`parse_bit_map`/`format_bit_map`, casamento por Ø com tolerância 0,001 mm). Diâmetros sem escolha seguem
+  `available_drills` + `library_rule`; escolhidos à mão nunca são fresados automaticamente (só com `fresa`).
+  Na UI: `DrillTable(multi=True)` + `OperationPanel._assign_bits` (botão *Atribuir broca*); ao sair de outro modo
+  só as linhas cuja broca mudaria são fixadas (as demais continuam "automáticas", sem ✎).
+- **Importar G-code** (`gcode/importer.py`): blocos por troca de ferramenta / comentário `(Op …)`; corte = avanço
+  com Z ≤ `cut_z_threshold`; descida+subida sem XY = furo; passadas repetidas (inclusive em zigue-zague) =
+  multiprofundidade (`depth_per_pass` = maior passo entre níveis); profundidades diferentes = ops separadas com a
+  mesma ferramenta. O job sai com `settings["edited"]=True, "imported"=True` (salvo com os caminhos no `.bcam`),
+  `job.gcode` = texto original (enviado sem mudanças até editar; `settings["regenerated"]` após o pós) e
+  `source_id` = a `GeometryLayer` criada (linhas + círculos dos furos; oculta se `make_geometry=False`).
+  `open_files` com `.nc` → `import_gcode_files`; `view_gcode_dialog` mantém o "só visualizar/enviar".
+  Inspetor: tabela *Ferramentas e cortes* (`_add_imported_params`, uma coluna por op) → `editOpsRequested` →
+  `EditJobOpsCmd`. `open_project` aceita job com `ops` e `source=-1`.
+- **Aparência:** `MainWindow._build_appearance_menu` (Exibir › Aparência e botão da faixa) grava `theme`, `accent`,
+  `accent_custom`, `canvas_style`, `corners`, `density`, `colored_icons` (grupo `ui`) e chama
+  `theme.manager().configure(**_style_kwargs())`. Use `palette().accent_fg` (não `accent`) quando o destaque for COR
+  DE TEXTO; ícone sobre botão `primary` sempre com `icon(nome, "accent_text")`. O degradê do canvas é fixo na tela
+  (`drawBackground` + `scrollContentsBy`). Em QSS, subcontrole antes do estado (`QCheckBox::indicator:focus`).
 - **Nomes de arquivo G-code:** sempre por `main_window.safe_gcode_filename` (ASCII, vírgula decimal → `-`).
   `save_all_gcode` (Ctrl+Shift+E) grava um `.nc` por caminho numa pasta, perguntando antes de sobrescrever.
 - **Deslocar/espelhar camada sem grupo** (`Project.set_layer_transform`) também move os caminhos dela
